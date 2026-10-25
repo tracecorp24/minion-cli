@@ -1,0 +1,173 @@
+{
+  "timestamp": "2026-10-25 19:48:11",
+  "uptime_seconds": 0.81,
+  "banana_mode": false,
+  "telemetry": {
+    "total_tasks": 1445,
+    "completed_tasks": 1420,
+    "failed_tasks": 5,
+    "completion_rate_pct": 98.27,
+    "token_cost_usd": 0.042,
+    "active_minions": 3,
+    "total_minions": 5
+  },
+  "minions": {
+    "01": {
+      "id": "01",
+      "name": "ast-parser",
+      "status": "RUNNING",
+      "model": "qwen-2.5-coder",
+      "progress": 65,
+      "cpu": 12.0,
+      "memory_mb": 535.5,
+      "current_task": "Mapping AST syntax trees (Node #142)",
+      "error_count": 0,
+      "recent_logs": [
+        {
+          "timestamp": "19:48:10",
+          "level": "INFO",
+          "source": "minion-01",
+          "message": "Minion worker initialized [PID: 21636]"
+        }
+      ]
+    },
+    "02": {
+      "id": "02",
+      "name": "net-mon",
+      "status": "IDLE",
+      "model": "glm-4-flash",
+      "progress": 0,
+      "cpu": 0.5,
+      "memory_mb": 270.1,
+      "current_task": "Awaiting socket stream traffic",
+      "error_count": 0,
+      "recent_logs": [
+        {
+          "timestamp": "19:48:10",
+          "level": "INFO",
+          "source": "minion-02",
+          "message": "Minion worker initialized [PID: 21636]"
+        }
+      ]
+    },
+    "03": {
+      "id": "03",
+      "name": "quant",
+      "status": "BUSY",
+      "model": "deepseek-r1",
+      "progress": 61,
+      "cpu": 45.0,
+      "memory_mb": 277.2,
+      "current_task": "Computing FP8 quantization tensors",
+      "error_count": 0,
+      "recent_logs": [
+        {
+          "timestamp": "19:48:10",
+          "level": "INFO",
+          "source": "minion-03",
+          "message": "Minion worker initialized [PID: 21636]"
+        }
+      ]
+    },
+    "04": {
+      "id": "04",
+      "name": "doc-ext",
+      "status": "PAUSED",
+      "model": "qwen-2.5-coder",
+      "progress": 55,
+      "cpu": 0.5,
+      "memory_mb": 467.7,
+      "current_task": "Standby for incoming PDF/markdown docs",
+      "error_count": 0,
+      "recent_logs": [
+        {
+          "timestamp": "19:48:10",
+          "level": "INFO",
+          "source": "minion-04",
+          "message": "Minion worker initialized [PID: 21636]"
+        }
+      ]
+    },
+    "05": {
+      "id": "05",
+      "name": "code-synth",
+      "status": "RUNNING",
+      "model": "qwen-2.5-coder",
+      "progress": 78,
+      "cpu": 12.0,
+      "memory_mb": 355.3,
+      "current_task": "Generating unit test coverage",
+      "error_count": 0,
+      "recent_logs": [
+        {
+          "timestamp": "19:48:10",
+          "level": "INFO",
+          "source": "minion-05",
+          "message": "Minion worker initialized [PID: 21636]"
+        }
+      ]
+    }
+  },
+  "plugins": {
+    "Docling-v2": {
+      "name": "Docling-v2",
+      "version": "2.4.1",
+      "active": true
+    },
+    "pgvector-sync": {
+      "name": "pgvector-sync",
+      "version": "1.0.8",
+      "active": true
+    },
+    "Telegram-Bot": {
+      "name": "Telegram-Bot",
+      "version": "3.1.0",
+      "active": false
+    }
+  },
+  "recent_errors": [],
+  "recent_logs": [
+    {
+      "timestamp": "19:48:10",
+      "level": "INFO",
+      "source": "minion-01",
+      "message": "Worker registered: ast-parser (qwen-2.5-coder)"
+    },
+    {
+      "timestamp": "19:48:10",
+      "level": "INFO",
+      "source": "minion-02",
+      "message": "Worker registered: net-mon (glm-4-flash)"
+    },
+    {
+      "timestamp": "19:48:10",
+      "level": "INFO",
+      "source": "minion-03",
+      "message": "Worker registered: quant (deepseek-r1)"
+    },
+    {
+      "timestamp": "19:48:10",
+      "level": "INFO",
+      "source": "minion-04",
+      "message": "Worker registered: doc-ext (qwen-2.5-coder)"
+    },
+    {
+      "timestamp": "19:48:10",
+      "level": "INFO",
+      "source": "minion-05",
+      "message": "Worker registered: code-synth (qwen-2.5-coder)"
+    },
+    {
+      "timestamp": "19:48:10",
+      "level": "BANANA",
+      "source": "fortress",
+      "message": "🍌 BANANA MODE ACTIVATED! Cluster frozen in emergency lockdown. State persisted."
+    },
+    {
+      "timestamp": "19:48:10",
+      "level": "BANANA",
+      "source": "fortress",
+      "message": "🍌 BANANA MODE DISENGAGED. Workers resumed to normal operations."
+    }
+  ]
+}
