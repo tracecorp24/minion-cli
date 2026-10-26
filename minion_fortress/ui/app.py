@@ -60,6 +60,8 @@ from minion_fortress.ui.panes.error_pane import ErrorHealthPane
 from minion_fortress.ui.panes.sniper_pane import LogSniperPane
 from minion_fortress.ui.panes.minion_pane import MinionPane
 from minion_fortress.ui.panes.plugin_pane import PluginPane
+from minion_fortress.ui.workspace import DynamicWorkspace
+from minion_fortress.ui.cli_tile import CliTilePane
 
 
 class MinionFortressApp(App):
@@ -68,6 +70,9 @@ class MinionFortressApp(App):
     CSS = FORTRESS_CSS
 
     BINDINGS = [
+        Binding("f2", "cycle_layout", "📐 Layout Değiştir", priority=True),
+        Binding("f3", "split_vertical", "⬌ Dikey Böl", priority=True),
+        Binding("f7", "split_horizontal", "⬍ Yatay Böl", priority=True),
         Binding("f12", "toggle_banana", "🍌 Banana Mode", priority=True),
         Binding("f8", "export_session", "📤 Export Session", priority=True),
         Binding("f4", "spawn_detached", "🪟 Detach Window", priority=True),
@@ -98,7 +103,7 @@ class MinionFortressApp(App):
         # Top Global Telemetry Banner
         yield Static(self._build_top_banner(), id="top-fortress-banner")
 
-        # Main Workspace: Left Sidebar + Right Tiling Canvas
+        # Main Workspace: Left Sidebar + Right Dynamic Tiling Workspace
         with Horizontal(id="app-grid"):
             # Left Sidebar: Cluster Telemetry & Minion Roster
             with Vertical(id="left-sidebar"):
@@ -107,14 +112,8 @@ class MinionFortressApp(App):
                 yield Static("🤖 MINION ROSTER (Click to Focus)", classes="section-header")
                 yield DataTable(id="minion-roster-table")
 
-            # Right Workspace: 2x2 Dynamic Tiling Grid
-            with Vertical(id="right-canvas"):
-                with Horizontal(classes="grid-row"):
-                    yield MinionPane(self.state, self.event_bus, initial_minion_id="01")
-                    yield ErrorHealthPane(self.state, self.event_bus)
-                with Horizontal(classes="grid-row"):
-                    yield LogSniperPane(self.state, self.event_bus)
-                    yield PluginPane(self.state, self.event_bus, self.plugin_manager)
+            # Right Workspace: Modular Dynamic Tiling Canvas with Presets and Drag Resizing
+            yield DynamicWorkspace(self.state, self.event_bus, self.plugin_manager, initial_preset="grid_2x2")
 
         # Bottom Interactive REPL with Tab-Completion
         with Horizontal(id="repl-container"):
@@ -218,40 +217,67 @@ class MinionFortressApp(App):
         """Selecting a minion row in the table focuses it in the Minion Pane."""
         if event.row_key and event.row_key.value:
             selected_id = str(event.row_key.value)
-            minion_pane = self.query_one(MinionPane)
-            minion_pane.set_minion(selected_id)
+            minion_panes = list(self.query(MinionPane))
+            if minion_panes:
+                minion_panes[0].set_minion(selected_id)
 
     def on_data_table_row_highlighted(self, event: DataTable.RowHighlighted) -> None:
         """Navigating rows automatically previews that minion in Minion Pane."""
         if event.row_key and event.row_key.value:
             selected_id = str(event.row_key.value)
-            minion_pane = self.query_one(MinionPane)
-            if minion_pane.selected_minion_id != selected_id and not minion_pane.is_replay_mode:
-                minion_pane.set_minion(selected_id)
+            minion_panes = list(self.query(MinionPane))
+            if minion_panes and minion_panes[0].selected_minion_id != selected_id and not minion_panes[0].is_replay_mode:
+                minion_panes[0].set_minion(selected_id)
 
     # -------------------------------------------------------------------------
     # Hotkey Actions
     # -------------------------------------------------------------------------
-    def action_spawn_detached(self) -> None:
+    def action_spawn_detached(self, cli_type: str = "all") -> None:
         """F4: Spawns the second window (Detached Monitor Node) automatically in a new OS console window."""
         root_path = Path(__file__).resolve().parent.parent.parent
         script_path = root_path / "detached_monitor.py"
         py_exec = sys.executable
 
         try:
+            target_flag = f"--target {cli_type}" if cli_type != "all" else ""
             if os.name == "nt":
-                cmd = f'start "MINION-FORTRESS: Detached Node [Pencere 2]" "{py_exec}" "{script_path}"'
+                cmd = f'start "MINION-FORTRESS: Detached Node [{cli_type.upper()}]" "{py_exec}" "{script_path}" {target_flag}'
                 subprocess.Popen(cmd, shell=True)
             else:
                 for term in ("x-terminal-emulator", "gnome-terminal", "konsole", "xterm"):
                     if shutil.which(term):
-                        subprocess.Popen([term, "-e", f"{py_exec} {script_path}"])
+                        subprocess.Popen([term, "-e", f"{py_exec} {script_path} {target_flag}"])
                         break
                 else:
-                    subprocess.Popen([py_exec, str(script_path)])
-            self.notify("🪟 Detached Monitor Window [Pencere 2] launched automatically!", title="DETACHED NODE", severity="information")
+                    args = [py_exec, str(script_path)]
+                    if target_flag:
+                        args.extend(["--target", cli_type])
+                    subprocess.Popen(args)
+            self.notify(f"🪟 Detached Node [{cli_type.upper()}] launched!", title="DETACHED NODE", severity="information")
         except Exception as e:
             self.notify(f"Could not spawn detached window: {e}", severity="warning")
+
+    def action_cycle_layout(self) -> None:
+        """F2: Cycles through layout presets."""
+        presets = ["grid_2x2", "main_stack", "split_v", "split_h", "three_cols", "single"]
+        ws = self.query_one(DynamicWorkspace)
+        curr = ws.current_preset
+        next_idx = (presets.index(curr) + 1) % len(presets) if curr in presets else 0
+        self.run_worker(ws.apply_preset(presets[next_idx]))
+
+    def action_split_vertical(self) -> None:
+        """F3: Splits active tile vertically."""
+        ws = self.query_one(DynamicWorkspace)
+        if ws._active_tiles:
+            target_id = list(ws._active_tiles.keys())[0]
+            self.run_worker(ws.split_tile(target_id, direction="horizontal"))
+
+    def action_split_horizontal(self) -> None:
+        """F7: Splits active tile horizontally."""
+        ws = self.query_one(DynamicWorkspace)
+        if ws._active_tiles:
+            target_id = list(ws._active_tiles.keys())[0]
+            self.run_worker(ws.split_tile(target_id, direction="vertical"))
 
     def action_toggle_banana(self) -> None:
         """F12: Emergency Panic Banana Mode toggle."""
@@ -305,11 +331,14 @@ class MinionFortressApp(App):
             else:
                 target_id = target
 
+            minion_panes = list(self.query(MinionPane))
+            minion_pane = minion_panes[0] if minion_panes else None
+
             if target == "model" and action == "switch":
                 model_name = parts[2] if len(parts) > 2 else "qwen-2.5-coder"
-                minion_pane = self.query_one(MinionPane)
-                self.daemon.switch_model(minion_pane.selected_minion_id, model_name)
-                self.notify(f"Switched model of Minion-{minion_pane.selected_minion_id} to {model_name}")
+                if minion_pane:
+                    self.daemon.switch_model(minion_pane.selected_minion_id, model_name)
+                    self.notify(f"Switched model of Minion-{minion_pane.selected_minion_id} to {model_name}")
                 return
 
             if target_id not in self.state.minions:
@@ -326,15 +355,15 @@ class MinionFortressApp(App):
                 self.daemon.trigger_test_error(target_id)
                 self.notify(f"Triggered simulated fault on Minion-{target_id} (Watchdog will auto-heal!)", severity="warning")
             elif action == "replay":
-                minion_pane = self.query_one(MinionPane)
-                minion_pane.set_minion(target_id)
-                minion_pane.is_replay_mode = True
-                minion_pane.replay_offset = 25
-                minion_pane.refresh_minion_display()
+                if minion_pane:
+                    minion_pane.set_minion(target_id)
+                    minion_pane.is_replay_mode = True
+                    minion_pane.replay_offset = 25
+                    minion_pane.refresh_minion_display()
                 self.notify(f"Time travel engaged for Minion-{target_id}")
             else:
-                minion_pane = self.query_one(MinionPane)
-                minion_pane.set_minion(target_id)
+                if minion_pane:
+                    minion_pane.set_minion(target_id)
             return
 
         # Direct commands
@@ -342,6 +371,16 @@ class MinionFortressApp(App):
             self.action_toggle_banana()
         elif root in ("export", "snapshot"):
             self.action_export_session()
+        elif root in ("layout", "preset"):
+            preset = parts[1] if len(parts) > 1 else "grid_2x2"
+            ws = self.query_one(DynamicWorkspace)
+            self.run_worker(ws.apply_preset(preset))
+        elif root == "split":
+            direction = parts[1] if len(parts) > 1 else "v"
+            if direction in ("v", "col", "vertical"):
+                self.action_split_vertical()
+            else:
+                self.action_split_horizontal()
         elif root in ("detach", "window", "monitor"):
             self.action_spawn_detached()
         elif root in ("heal", "repair"):

@@ -182,4 +182,182 @@ Button.paused-btn {{
     background: #444444;
     color: #AAAAAA;
 }}
+
+/* Dynamic Workspace and Tiling Styles */
+#workspace-canvas {{
+    width: 100%;
+    height: 1fr;
+    padding: 0;
+    margin: 0;
+}}
+
+.split-col {{
+    layout: horizontal;
+    height: 100%;
+    width: 100%;
+}}
+
+.split-row {{
+    layout: vertical;
+    height: 100%;
+    width: 100%;
+}}
+
+#preset-toolbar {{
+    height: 3;
+    background: #141414;
+    border-bottom: heavy {BORDER_YELLOW};
+    padding: 0 1;
+    layout: horizontal;
+}}
+
+.preset-label {{
+    width: auto;
+    color: {BANANA_YELLOW};
+    text-style: bold;
+    content-align: center middle;
+    padding-right: 1;
+}}
+
+.preset-btn {{
+    width: auto;
+    min-width: 9;
+    height: 1;
+    margin: 0 1 0 0;
+    background: #252525;
+    color: #E0E0E0;
+    border: none;
+}}
+
+.preset-btn:hover {{
+    background: {BANANA_YELLOW};
+    color: #000000;
+    text-style: bold;
+}}
+
+.preset-btn-active {{
+    background: {HEAL_GREEN};
+    color: #000000;
+    text-style: bold;
+}}
+
+CliTilePane {{
+    border: heavy {BORDER_YELLOW};
+    background: {PANEL_BG};
+    height: 1fr;
+    width: 1fr;
+    margin: 0;
+    padding: 0;
+}}
+
+CliTilePane:focus-within {{
+    border: heavy {HEAL_GREEN};
+}}
+
+.tile-header-bar {{
+    height: 1;
+    background: #202020;
+    padding: 0 1;
+    layout: horizontal;
+}}
+
+.tile-title-text {{
+    width: 1fr;
+    color: {BANANA_YELLOW};
+    text-style: bold;
+}}
+
+.tile-actions-strip {{
+    width: auto;
+    layout: horizontal;
+}}
+
+.tile-hdr-btn {{
+    width: 4;
+    min-width: 4;
+    height: 1;
+    padding: 0;
+    margin: 0 0 0 1;
+    background: #333333;
+    color: #FFFFFF;
+    border: none;
+}}
+
+.tile-hdr-btn:hover {{
+    background: {BANANA_YELLOW};
+    color: #000000;
+    text-style: bold;
+}}
+
+.tile-hdr-btn-danger:hover {{
+    background: {ERROR_RED};
+    color: #FFFFFF;
+}}
+
+.tile-inner-container {{
+    height: 1fr;
+    width: 100%;
+    padding: 0;
+    margin: 0;
+}}
+
+.tile-input-container {{
+    height: 3;
+    background: #141414;
+    border-top: solid #333333;
+    padding: 0 1;
+    layout: horizontal;
+}}
+
+.tile-prompt-tag {{
+    width: auto;
+    color: {HEAL_GREEN};
+    text-style: bold;
+    content-align: center middle;
+    padding-right: 1;
+}}
+
+.tile-cli-input {{
+    width: 1fr;
+    background: #0A0A0A;
+    border: tall {BORDER_YELLOW};
+    color: #FFFFFF;
+}}
+
+DragSplitter {{
+    background: #222222;
+    color: {BANANA_YELLOW};
+    text-align: center;
+    content-align: center middle;
+}}
+
+DragSplitter:hover {{
+    background: {HEAL_GREEN};
+    color: #000000;
+}}
+
+DragSplitter.active-drag {{
+    background: {BANANA_YELLOW};
+    color: #000000;
+}}
+
+.splitter-h {{
+    width: 1;
+    height: 100%;
+}}
+
+.splitter-v {{
+    height: 1;
+    width: 100%;
+}}
+
+.shell-container {{
+    height: 100%;
+    width: 100%;
+}}
+
+.shell-title {{
+    background: {INFO_CYAN};
+    color: #000000;
+}}
 """

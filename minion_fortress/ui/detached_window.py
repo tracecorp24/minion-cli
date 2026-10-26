@@ -89,10 +89,11 @@ class DetachedMonitorApp(App):
         Binding("f12", "quick_banana", "🍌 Panic", priority=True),
     ]
 
-    def __init__(self, host: str = "127.0.0.1", port: int = 42010) -> None:
+    def __init__(self, host: str = "127.0.0.1", port: int = 42010, target_cli: str = "all") -> None:
         super().__init__()
         self.host = host
         self.port = port
+        self.target_cli = target_cli
         self.reader: asyncio.StreamReader | None = None
         self.writer: asyncio.StreamWriter | None = None
         self._connected: bool = False
@@ -101,7 +102,8 @@ class DetachedMonitorApp(App):
         self._event_count = 0
 
     def compose(self) -> ComposeResult:
-        yield Static(" 🍌 MINION-FORTRESS: DETACHED NODE [PENCERE 2] - ZERO-LAG IPC STREAM ", id="detached-banner")
+        banner_tag = f"[{self.target_cli.upper()}]" if self.target_cli != "all" else "[TÜM SİSTEM]"
+        yield Static(f" 🍌 MINION-FORTRESS: AYRILMIŞ CLI DÜĞÜMÜ {banner_tag} - ZERO-LAG IPC LINK ", id="detached-banner")
         yield Static("• Status: Connecting to Main Fortress Daemon...", id="status-badge")
 
         with Horizontal():
@@ -112,11 +114,12 @@ class DetachedMonitorApp(App):
 
             # Right Half: Live Activity & Telemetry Stream
             with Vertical(classes="pane-box"):
-                yield Static("📡 LIVE CLUSTER EVENT STREAM", classes="pane-title")
+                yield Static(f"📡 LIVE EVENT STREAM {banner_tag}", classes="pane-title")
                 yield RichLog(id="activity-stream", classes="stream-log", highlight=True, markup=True)
 
+        ph = f"Send command to {self.target_cli} (e.g. pause, resume, banana, heal)..." if self.target_cli != "all" else "Send command to Main Fortress (e.g. banana, heal 01, @01 pause)..."
         with Horizontal(id="cmd-bar"):
-            yield Input(placeholder="Send command to Main Fortress (e.g. banana, heal 01, @01 pause)...", id="remote-cmd-input")
+            yield Input(placeholder=ph, id="remote-cmd-input")
 
         yield Footer()
 
@@ -215,9 +218,14 @@ class DetachedMonitorApp(App):
         if not cmd:
             return
 
+        # Auto-target minion if this window is attached to a specific minion
+        if self.target_cli.startswith("minion-") and not cmd.startswith("@") and not cmd.lower().startswith("banana"):
+            mid = self.target_cli.replace("minion-", "")
+            cmd = f"@{mid} {cmd}"
+
         if self.writer:
             try:
-                payload = json.dumps({"type": "COMMAND", "data": {"command": cmd, "source": "detached_window"}}).encode("utf-8") + b"\n"
+                payload = json.dumps({"type": "COMMAND", "data": {"command": cmd, "source": f"detached_{self.target_cli}"}}).encode("utf-8") + b"\n"
                 self.writer.write(payload)
                 await self.writer.drain()
                 activity_log = self.query_one("#activity-stream", RichLog)
@@ -235,7 +243,14 @@ class DetachedMonitorApp(App):
 
 
 def main() -> None:
-    app = DetachedMonitorApp()
+    import argparse
+    parser = argparse.ArgumentParser(description="Minion Fortress Detached CLI Node")
+    parser.add_argument("--target", type=str, default="all", help="Target CLI to attach to (e.g. minion-01, shell, error)")
+    parser.add_argument("--host", type=str, default="127.0.0.1", help="Host IP")
+    parser.add_argument("--port", type=int, default=42010, help="Socket port")
+    args = parser.parse_args()
+
+    app = DetachedMonitorApp(host=args.host, port=args.port, target_cli=args.target)
     app.run()
 
 
