@@ -7,6 +7,8 @@ and hot-switchable CLI modes.
 
 from __future__ import annotations
 import asyncio
+import os
+import subprocess
 from typing import Optional, Callable, Any
 from textual.app import ComposeResult
 from textual.widgets import Static, Button, Input
@@ -332,20 +334,41 @@ class CliTilePane(Vertical):
         # If it's a minion pane
         if self.cli_type.startswith("minion-"):
             mid = self.cli_type.replace("minion-", "")
-            # If command doesn't start with @ or minion, prefix it with @mid
-            if not first.startswith("@") and first not in ("banana", "export", "detach", "heal", "help"):
-                full_cmd = f"@{mid} {cmd}"
-            else:
-                full_cmd = cmd
+            minion_cmds = ("pause", "resume", "error", "crash", "replay", "live", "model", "task", "status")
+            fortress_cmds = ("banana", "export", "detach", "heal", "help", "spawn", "layout", "preset")
 
-            # Send to EventBus
-            await self.event_bus.publish(
-                Event(
-                    type=EventType.COMMAND,
-                    source=f"tile_{self.tile_id}",
-                    data={"command": full_cmd},
+            # Check if it's a known minion or fortress command
+            if first.startswith("@") or first in minion_cmds or first in fortress_cmds:
+                full_cmd = f"@{mid} {cmd}" if not first.startswith("@") and first not in fortress_cmds else cmd
+                await self.event_bus.publish(
+                    Event(
+                        type=EventType.COMMAND,
+                        source=f"tile_{self.tile_id}",
+                        data={"command": full_cmd},
+                    )
                 )
-            )
+                return
+
+            # Otherwise, the operator typed a system command or tool (e.g. agy, python, dir, git)
+            # If it's agy or an interactive shell app, launch safely in external console or switch to shell:
+            if first == "agy" or first in ("start", "open", "powershell", "cmd", "bash"):
+                target_cmd = " ".join(parts[1:]) if first in ("start", "open") else cmd
+                if not target_cmd:
+                    target_cmd = "cmd.exe"
+                try:
+                    if os.name == "nt":
+                        subprocess.Popen(f'start "{target_cmd}" cmd /k "{target_cmd}"', shell=True)
+                    else:
+                        subprocess.Popen(f'x-terminal-emulator -e "{target_cmd}" || xterm -e "{target_cmd}"', shell=True)
+                    self.app.notify(f"🚀 Harici terminalde başlatıldı: {target_cmd}", title="CLI BAŞLATILDI")
+                except Exception as e:
+                    self.app.notify(f"Terminal başlatılamadı: {e}", severity="error")
+                return
+
+            # For general shell commands entered in a minion pane, auto-switch to shell and execute!
+            await self.switch_cli("shell")
+            if isinstance(self._current_widget, InteractiveShellPane):
+                await self._current_widget.execute_command(cmd)
             return
 
         # If error pane

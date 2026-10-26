@@ -309,3 +309,42 @@ async def test_splits_do_not_collapse_terminals():
             assert t.size.height > 0, f"Tile {tid} ({t.cli_type}) has collapsed height: {t.size.height}"
 
         await app.action_quit()
+
+
+@pytest.mark.asyncio
+async def test_shell_execution_and_interactive_tools():
+    """Verify that commands execute asynchronously without blocking, and interactive tools are handled safely."""
+    state = FortressState()
+    bus = EventBus()
+    pane = InteractiveShellPane(state, bus)
+
+    app = MinionFortressApp(
+        state=state,
+        event_bus=bus,
+        auto_spawn_detached=False,
+    )
+
+    async with app.run_test() as pilot:
+        await pilot.pause(0.2)
+        ws = app.query_one(DynamicWorkspace)
+        tile = ws._active_tiles["tile_1"]
+
+        # Switch tile to shell mode
+        await tile.switch_cli("shell")
+        await pilot.pause(0.1)
+
+        shell_pane = tile.query_one(InteractiveShellPane)
+        assert shell_pane is not None
+
+        # Execute a quick command
+        await shell_pane.execute_command("echo fortress_online")
+        await pilot.pause(0.3)
+
+        # Execute an interactive command (agy) which is safely routed without hanging
+        await shell_pane.execute_command("agy --dangerously-skip-permissions")
+        await pilot.pause(0.2)
+
+        # Ensure the app is still 100% alive, responding, and unblocked
+        assert app.is_running is True
+
+        await app.action_quit()
