@@ -193,14 +193,34 @@ Button.paused-btn {{
 
 .split-col {{
     layout: horizontal;
-    height: 100%;
+    height: 1fr;
     width: 100%;
 }}
 
 .split-row {{
     layout: vertical;
-    height: 100%;
+    height: 1fr;
     width: 100%;
+}}
+
+Horizontal > .split-row {{
+    width: 1fr !important;
+    height: 100% !important;
+}}
+
+Vertical > .split-col {{
+    height: 1fr !important;
+    width: 100% !important;
+}}
+
+Horizontal > CliTilePane {{
+    width: 1fr !important;
+    height: 100% !important;
+}}
+
+Vertical > CliTilePane {{
+    height: 1fr !important;
+    width: 100% !important;
 }}
 
 #preset-toolbar {{
@@ -246,6 +266,8 @@ CliTilePane {{
     background: {PANEL_BG};
     height: 1fr;
     width: 1fr;
+    min-width: 12;
+    min-height: 5;
     margin: 0;
     padding: 0;
 }}
@@ -302,7 +324,7 @@ CliTilePane:focus-within {{
 }}
 
 .tile-input-container {{
-    height: 3;
+    height: 1;
     background: #141414;
     border-top: solid #333333;
     padding: 0 1;
@@ -311,6 +333,7 @@ CliTilePane:focus-within {{
 
 .tile-prompt-tag {{
     width: auto;
+    height: 1;
     color: {HEAL_GREEN};
     text-style: bold;
     content-align: center middle;
@@ -319,9 +342,69 @@ CliTilePane:focus-within {{
 
 .tile-cli-input {{
     width: 1fr;
+    height: 1;
     background: #0A0A0A;
-    border: tall {BORDER_YELLOW};
+    border: none;
+    padding: 0;
     color: #FFFFFF;
+}}
+
+CliTilePane .pane-container {{
+    border: none !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    height: 1fr !important;
+    width: 100% !important;
+}}
+
+CliTilePane .pane-title {{
+    display: none !important;
+}}
+
+CliTilePane .minion-avatar-box {{
+    border: none !important;
+    padding: 0 1 !important;
+    margin: 0 !important;
+    height: auto !important;
+    max-height: 2 !important;
+    background: #141414 !important;
+    color: {BANANA_YELLOW} !important;
+}}
+
+CliTilePane .action-bar {{
+    height: 1 !important;
+    padding: 0 1 !important;
+    margin: 0 !important;
+    background: #181818 !important;
+}}
+
+CliTilePane .action-bar Button {{
+    height: 1 !important;
+    min-width: 5 !important;
+    border: none !important;
+    padding: 0 !important;
+    margin-right: 1 !important;
+}}
+
+CliTilePane .log-stream {{
+    height: 1fr !important;
+    min-height: 2 !important;
+}}
+
+CliTilePane #sniper-regex-input {{
+    height: 1 !important;
+    border: none !important;
+    padding: 0 1 !important;
+}}
+
+CliTilePane #sniper-status-bar {{
+    height: 1 !important;
+    padding: 0 1 !important;
+}}
+
+CliTilePane #error-telemetry-badge {{
+    height: 1 !important;
+    padding: 0 1 !important;
 }}
 
 DragSplitter {{

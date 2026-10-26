@@ -264,3 +264,48 @@ async def test_drag_splitter_resizing():
         assert splitter.dragging is False
 
         await app.action_quit()
+
+
+@pytest.mark.asyncio
+async def test_splits_do_not_collapse_terminals():
+    """Verify that multiple horizontal and vertical splits never collapse sibling tiles or terminals."""
+    state = FortressState()
+    bus = EventBus()
+    plugin_mgr = PluginManager()
+    daemon = MinionDaemon(state, bus, plugin_mgr)
+
+    app = MinionFortressApp(
+        state=state,
+        event_bus=bus,
+        daemon=daemon,
+        plugin_manager=plugin_mgr,
+        auto_spawn_detached=False,
+    )
+
+    async with app.run_test(size=(140, 45)) as pilot:
+        await pilot.pause(0.2)
+        ws = app.query_one(DynamicWorkspace)
+
+        # 1. Split tile_1 horizontally (columns)
+        await ws.split_tile("tile_1", direction="horizontal")
+        await pilot.pause(0.2)
+
+        # 2. Split tile_1 vertically (rows)
+        await ws.split_tile("tile_1", direction="vertical")
+        await pilot.pause(0.2)
+
+        # 3. Split tile_2 vertically (rows)
+        await ws.split_tile("tile_2", direction="vertical")
+        await pilot.pause(0.2)
+
+        # 4. Split tile_3 horizontally (columns)
+        await ws.split_tile("tile_3", direction="horizontal")
+        await pilot.pause(0.2)
+
+        # Check all tiles
+        assert len(ws._active_tiles) == 8
+        for tid, t in ws._active_tiles.items():
+            assert t.size.width > 0, f"Tile {tid} ({t.cli_type}) has collapsed width: {t.size.width}"
+            assert t.size.height > 0, f"Tile {tid} ({t.cli_type}) has collapsed height: {t.size.height}"
+
+        await app.action_quit()

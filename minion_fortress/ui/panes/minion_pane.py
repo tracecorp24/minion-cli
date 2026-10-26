@@ -87,12 +87,15 @@ class MinionPane(Vertical):
                     status_display = target_snap.get("status", minion.status.value)
                     cpu_display = target_snap.get("cpu", minion.cpu)
 
-            pbar = render_progress_bar(prog_display, width=12)
-            avatar_text = (
-                f"  (o) > {task_display}\n"
-                f" |█| > [PROGRESS] [{pbar}] {prog_display}%\n"
-                f"  / \\ > Status: {status_display} │ CPU: {cpu_display}% │ RAM: {minion.memory_mb}MB"
-            )
+            pbar = render_progress_bar(prog_display, width=10)
+            if self.size.height and self.size.height < 14:
+                avatar_text = f" (o) {task_display[:28]} │ [{pbar}] {prog_display}% │ {status_display} │ CPU:{cpu_display}%"
+            else:
+                avatar_text = (
+                    f"  (o) > {task_display}\n"
+                    f" |█| > [PROGRESS] [{pbar}] {prog_display}%\n"
+                    f"  / \\ > Status: {status_display} │ CPU: {cpu_display}% │ RAM: {minion.memory_mb}MB"
+                )
             ascii_box = self.query_one("#minion-ascii-box", Static)
             ascii_box.update(avatar_text)
         except Exception:
@@ -185,7 +188,15 @@ class MinionPane(Vertical):
                     except Exception:
                         pass
 
-                self.app.call_from_thread(append_log)
+                import threading
+                if threading.current_thread() is threading.main_thread():
+                    append_log()
+                else:
+                    self.app.call_from_thread(append_log)
 
     def _on_status_change(self, event: Event) -> None:
-        self.app.call_from_thread(self._update_header_and_avatar)
+        import threading
+        if threading.current_thread() is threading.main_thread():
+            self._update_header_and_avatar()
+        else:
+            self.app.call_from_thread(self._update_header_and_avatar)

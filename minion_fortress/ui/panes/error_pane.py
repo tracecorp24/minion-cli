@@ -49,7 +49,11 @@ class ErrorHealthPane(Vertical):
             source=source,
             message=message,
         )
-        self.app.call_from_thread(self._render_log_entry, entry)
+        import threading
+        if threading.current_thread() is threading.main_thread():
+            self._render_log_entry(entry)
+        else:
+            self.app.call_from_thread(self._render_log_entry, entry)
 
     def _render_log_entry(self, entry: LogEntry) -> None:
         try:

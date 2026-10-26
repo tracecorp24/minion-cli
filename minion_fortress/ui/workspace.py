@@ -76,13 +76,29 @@ class DynamicWorkspace(Vertical):
     }
     .split-col {
         layout: horizontal;
-        height: 100%;
+        height: 1fr;
         width: 100%;
     }
     .split-row {
         layout: vertical;
-        height: 100%;
+        height: 1fr;
         width: 100%;
+    }
+    Horizontal > .split-row {
+        width: 1fr !important;
+        height: 100% !important;
+    }
+    Vertical > .split-col {
+        height: 1fr !important;
+        width: 100% !important;
+    }
+    Horizontal > CliTilePane {
+        width: 1fr !important;
+        height: 100% !important;
+    }
+    Vertical > CliTilePane {
+        height: 1fr !important;
+        width: 100% !important;
     }
     """
 
@@ -298,30 +314,30 @@ class DynamicWorkspace(Vertical):
         splitter = DragSplitter(direction=direction)
 
         if direction == "horizontal":
-            # If parent is already Horizontal, insert after target
-            if isinstance(parent, Horizontal):
-                idx = parent.children.index(target_tile)
-                await parent.mount(splitter, after=idx)
-                await parent.mount(new_tile, after=idx + 1)
+            # If parent is already Horizontal (and not canvas), insert after target
+            if isinstance(parent, Horizontal) and parent.id != "workspace-canvas":
+                await parent.mount(splitter, after=target_tile)
+                await parent.mount(new_tile, after=splitter)
             else:
                 # Wrap target_tile and new_tile inside a new Horizontal container
                 h_box = Horizontal(classes="split-col")
-                idx = parent.children.index(target_tile)
-                await parent.mount(h_box, after=idx)
+                h_box.styles.height = "1fr"
+                h_box.styles.width = "100%"
+                await parent.mount(h_box, after=target_tile)
                 await target_tile.remove()
                 await h_box.mount(target_tile)
                 await h_box.mount(splitter)
                 await h_box.mount(new_tile)
         else:
             # Vertical split
-            if isinstance(parent, Vertical):
-                idx = parent.children.index(target_tile)
-                await parent.mount(splitter, after=idx)
-                await parent.mount(new_tile, after=idx + 1)
+            if isinstance(parent, Vertical) and parent.id != "workspace-canvas":
+                await parent.mount(splitter, after=target_tile)
+                await parent.mount(new_tile, after=splitter)
             else:
                 v_box = Vertical(classes="split-row")
-                idx = parent.children.index(target_tile)
-                await parent.mount(v_box, after=idx)
+                v_box.styles.width = "1fr"
+                v_box.styles.height = "100%"
+                await parent.mount(v_box, after=target_tile)
                 await target_tile.remove()
                 await v_box.mount(target_tile)
                 await v_box.mount(splitter)
@@ -348,6 +364,9 @@ class DynamicWorkspace(Vertical):
                 if isinstance(child, DragSplitter):
                     await child.remove()
                     break
+            # Remove container if empty
+            if len(parent.children) == 0 and parent.parent:
+                await parent.remove()
 
         self.app.notify(f"CLI bölmesi kapatıldı: {tile_id}", title="KAPATILDI")
 

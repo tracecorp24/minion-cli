@@ -54,7 +54,11 @@ class LogSniperPane(Vertical):
             source=data.get("source", "system"),
             message=data.get("message", ""),
         )
-        self.app.call_from_thread(self._check_and_append_log, entry)
+        import threading
+        if threading.current_thread() is threading.main_thread():
+            self._check_and_append_log(entry)
+        else:
+            self.app.call_from_thread(self._check_and_append_log, entry)
 
     def _check_and_append_log(self, entry: LogEntry) -> None:
         try:
