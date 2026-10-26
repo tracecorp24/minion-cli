@@ -47,8 +47,7 @@ class DragSplitter(Static):
         """
         direction: 'horizontal' (divides side-by-side columns, resizes width)
                    or 'vertical' (divides stacked rows, resizes height).
-        target_id: ID of the widget before this splitter to resize.
-                   If None, automatically targets the previous sibling.
+        target_id: Optional ID of the widget before this splitter to resize.
         """
         self.direction = direction
         self.target_id = target_id
@@ -61,66 +60,117 @@ class DragSplitter(Static):
         self.dragging: bool = False
         self.start_x: int = 0
         self.start_y: int = 0
+        self.prev_target = None
+        self.next_target = None
+        self.initial_prev_size: int = 0
+        self.initial_next_size: int = 0
+
+    def _get_adjacent_pair(self):
+        """Returns the (prev_widget, next_widget) adjacent to this splitter."""
+        if not self.parent or not self.parent.children:
+            return None, None
+
+        siblings = list(self.parent.children)
+        try:
+            idx = siblings.index(self)
+        except ValueError:
+            return None, None
+
+        prev_w = None
+        for i in range(idx - 1, -1, -1):
+            if not isinstance(siblings[i], DragSplitter):
+                prev_w = siblings[i]
+                break
+
+        next_w = None
+        for i in range(idx + 1, len(siblings)):
+            if not isinstance(siblings[i], DragSplitter):
+                next_w = siblings[i]
+                break
+
+        return prev_w, next_w
 
     def _get_target_widget(self):
-        if self.target_id:
-            try:
-                return self.screen.query_one(f"#{self.target_id}")
-            except Exception:
-                pass
-
-        # Fallback: previous sibling in parent
-        if self.parent and self.parent.children:
-            siblings = list(self.parent.children)
-            try:
-                idx = siblings.index(self)
-                if idx > 0:
-                    return siblings[idx - 1]
-            except ValueError:
-                pass
-        return None
+        """Backwards-compatible helper returning the previous widget."""
+        prev_w, _ = self._get_adjacent_pair()
+        return prev_w
 
     def on_mouse_down(self, event: events.MouseDown) -> None:
         if event.button == 1:  # Left mouse button for drag
+            prev_w, next_w = self._get_adjacent_pair()
+            if not prev_w:
+                return
+
             self.dragging = True
             self.start_x = event.screen_x
             self.start_y = event.screen_y
+            self.prev_target = prev_w
+            self.next_target = next_w
+
+            # Freeze sibling non-splitter widgets to outer_size to prevent flex-box jumping
+            if self.parent:
+                for child in self.parent.children:
+                    if not isinstance(child, DragSplitter):
+                        if self.direction == "horizontal":
+                            child.styles.width = child.outer_size.width or child.size.width
+                        else:
+                            child.styles.height = child.outer_size.height or child.size.height
+
+            if self.direction == "horizontal":
+                self.initial_prev_size = prev_w.outer_size.width or prev_w.size.width or 40
+                self.initial_next_size = (next_w.outer_size.width or next_w.size.width or 40) if next_w else 0
+            else:
+                self.initial_prev_size = prev_w.outer_size.height or prev_w.size.height or 15
+                self.initial_next_size = (next_w.outer_size.height or next_w.size.height or 15) if next_w else 0
+
             self.add_class("active-drag")
             self.capture_mouse()
             event.stop()
 
     def on_mouse_move(self, event: events.MouseMove) -> None:
-        if not self.dragging:
-            return
-
-        target = self._get_target_widget()
-        if not target:
+        if not self.dragging or not self.prev_target:
             return
 
         if self.direction == "horizontal":
-            dx = event.screen_x - self.start_x
-            if abs(dx) >= 1:
-                curr_w = target.size.width
-                new_w = max(12, curr_w + dx)
-                target.styles.width = new_w
-                self.start_x = event.screen_x
+            total_dx = event.screen_x - self.start_x
+            if self.next_target:
+                combined = self.initial_prev_size + self.initial_next_size
+                min_w = 12
+                if combined >= 2 * min_w:
+                    new_prev = max(min_w, min(combined - min_w, self.initial_prev_size + total_dx))
+                    new_next = combined - new_prev
+                    self.prev_target.styles.width = new_prev
+                    self.next_target.styles.width = new_next
+            else:
+                new_prev = max(12, self.initial_prev_size + total_dx)
+                self.prev_target.styles.width = new_prev
         else:
-            dy = event.screen_y - self.start_y
-            if abs(dy) >= 1:
-                curr_h = target.size.height
-                new_h = max(4, curr_h + dy)
-                target.styles.height = new_h
-                self.start_y = event.screen_y
+            total_dy = event.screen_y - self.start_y
+            if self.next_target:
+                combined = self.initial_prev_size + self.initial_next_size
+                min_h = 5
+                if combined >= 2 * min_h:
+                    new_prev = max(min_h, min(combined - min_h, self.initial_prev_size + total_dy))
+                    new_next = combined - new_prev
+                    self.prev_target.styles.height = new_prev
+                    self.next_target.styles.height = new_next
+            else:
+                new_prev = max(5, self.initial_prev_size + total_dy)
+                self.prev_target.styles.height = new_prev
 
         event.stop()
 
     def on_mouse_up(self, event: events.MouseUp) -> None:
         if self.dragging:
             self.dragging = False
+            self.prev_target = None
+            self.next_target = None
             self.remove_class("active-drag")
             self.release_mouse()
             event.stop()
 
     def on_mouse_capture_out(self) -> None:
         self.dragging = False
+        self.prev_target = None
+        self.next_target = None
         self.remove_class("active-drag")

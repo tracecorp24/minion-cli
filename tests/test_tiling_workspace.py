@@ -348,3 +348,118 @@ async def test_shell_execution_and_interactive_tools():
         assert app.is_running is True
 
         await app.action_quit()
+
+
+@pytest.mark.asyncio
+async def test_three_panes_paired_splitter_and_input_typing():
+    """Verify paired 2-way dragging across 3 panes and instant keyboard input focus."""
+    state = FortressState()
+    bus = EventBus()
+    plugin_mgr = PluginManager()
+    daemon = MinionDaemon(state, bus, plugin_mgr)
+
+    app = MinionFortressApp(
+        state=state,
+        event_bus=bus,
+        daemon=daemon,
+        plugin_manager=plugin_mgr,
+        auto_spawn_detached=False,
+    )
+
+    async with app.run_test(size=(120, 40)) as pilot:
+        await pilot.pause(0.2)
+        ws = app.query_one(DynamicWorkspace)
+
+        # Apply 3 columns layout preset
+        await ws.apply_preset("three_cols")
+        await pilot.pause(0.2)
+        assert len(ws._active_tiles) == 3
+
+        splitters = list(ws.query(DragSplitter))
+        assert len(splitters) >= 2
+        s1, s2 = splitters[0], splitters[1]
+
+        # Verify adjacent pairs are correctly identified
+        prev1, next1 = s1._get_adjacent_pair()
+        prev2, next2 = s2._get_adjacent_pair()
+        assert prev1 is not None and next1 is not None
+        assert prev2 is not None and next2 is not None
+        # s1's next widget is the middle tile, which is s2's previous widget!
+        assert next1 == prev2
+
+        # Simulate dragging s1: left click mouse down and move
+        s1.post_message(
+            events.MouseDown(
+                s1,
+                x=0,
+                y=0,
+                delta_x=0,
+                delta_y=0,
+                button=1,
+                shift=False,
+                meta=False,
+                ctrl=False,
+                screen_x=40,
+                screen_y=10,
+            )
+        )
+        await pilot.pause(0.05)
+        assert s1.dragging is True
+
+        initial_prev1_w = prev1.outer_size.width
+        initial_next1_w = next1.outer_size.width
+        comb1 = initial_prev1_w + initial_next1_w
+
+        s1.post_message(
+            events.MouseMove(
+                s1,
+                x=5,
+                y=0,
+                delta_x=5,
+                delta_y=0,
+                button=1,
+                shift=False,
+                meta=False,
+                ctrl=False,
+                screen_x=45,
+                screen_y=10,
+            )
+        )
+        await pilot.pause(0.05)
+        s1.post_message(
+            events.MouseUp(
+                s1,
+                x=5,
+                y=0,
+                delta_x=0,
+                delta_y=0,
+                button=1,
+                shift=False,
+                meta=False,
+                ctrl=False,
+                screen_x=45,
+                screen_y=10,
+            )
+        )
+        await pilot.pause(0.05)
+
+        # S1 pair exchanged width while sum remained invariant
+        assert prev1.styles.width.value + next1.styles.width.value == comb1
+
+        # Test typing directly into newly split tile input
+        await ws.split_tile(prev1.tile_id, direction="vertical")
+        await pilot.pause(0.2)
+
+        # Get latest active tile
+        new_tile = list(ws._active_tiles.values())[-1]
+        new_tile.focus_input()
+        await pilot.pause(0.1)
+
+        tile_input = new_tile.query_one(f"#input-{new_tile.tile_id}", Input)
+        assert app.focused == tile_input
+
+        # Type command into the tile input
+        await pilot.press("d", "i", "r")
+        assert tile_input.value == "dir"
+
+        await app.action_quit()

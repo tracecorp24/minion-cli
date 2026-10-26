@@ -49,8 +49,11 @@ class CliTilePane(Vertical):
     }
     .tile-title-text {
         width: 1fr;
+        height: 1;
         color: #FFE135;
         text-style: bold;
+        overflow-x: hidden;
+        text-overflow: ellipsis;
     }
     .tile-actions-strip {
         width: auto;
@@ -82,11 +85,17 @@ class CliTilePane(Vertical):
         margin: 0;
     }
     .tile-input-container {
-        height: 1;
+        height: 3;
+        min-height: 3;
+        max-height: 3;
         background: #141414;
-        border-top: solid #333333;
+        border-top: heavy #FFE135;
         padding: 0 1;
         layout: horizontal;
+    }
+    CliTilePane:focus-within .tile-input-container {
+        border-top: heavy #00FF7F;
+        background: #181818;
     }
     .tile-prompt-tag {
         width: auto;
@@ -103,6 +112,10 @@ class CliTilePane(Vertical):
         border: none;
         padding: 0;
         color: #FFFFFF;
+    }
+    .tile-cli-input:focus {
+        background: #000000;
+        color: #FFE135;
     }
     CliTilePane .pane-container {
         border: none !important;
@@ -266,12 +279,40 @@ class CliTilePane(Vertical):
 
         new_widget = self._create_cli_widget()
         await content_box.mount(new_widget)
+        self.call_after_refresh(self.focus_input)
+
+    def focus_input(self) -> None:
+        """Focuses the command input of this tile."""
+        try:
+            inp = self.query_one(f"#input-{self.tile_id}", Input)
+            inp.focus()
+        except Exception:
+            pass
+
+    def on_mount(self) -> None:
+        self.call_after_refresh(self.focus_input)
 
     def on_click(self, event: events.Click) -> None:
-        """Right-click opens the context menu modal."""
+        """Right-click opens the context menu modal; left-click focuses command input."""
         if event.button == 3:  # Right-click
             event.stop()
             self._open_context_menu()
+        elif event.button == 1:
+            try:
+                clicked = self.screen.get_widget_at(event.screen_x, event.screen_y)[0]
+                if not isinstance(clicked, Button):
+                    self.focus_input()
+            except Exception:
+                self.focus_input()
+
+    def on_key(self, event: events.Key) -> None:
+        """Ensure printable keystrokes inside tile focus and reach the command input."""
+        try:
+            inp = self.query_one(f"#input-{self.tile_id}", Input)
+            if self.app.focused != inp and event.is_printable:
+                inp.focus()
+        except Exception:
+            pass
 
     def _open_context_menu(self) -> None:
         def _handle_menu_result(result: dict) -> None:

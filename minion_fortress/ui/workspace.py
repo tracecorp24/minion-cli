@@ -255,6 +255,10 @@ class DynamicWorkspace(Vertical):
             await container.mount(s2)
             await container.mount(t3)
 
+        if self._active_tiles:
+            first_tile = next(iter(self._active_tiles.values()))
+            first_tile.call_after_refresh(first_tile.focus_input)
+
         self.app.notify(f"Düzen uygulandı: {preset_name}", title="LAYOUT DEĞİŞTİ", severity="information")
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
@@ -281,6 +285,7 @@ class DynamicWorkspace(Vertical):
         splitter = DragSplitter(direction="vertical")
         await canvas.mount(splitter)
         await canvas.mount(new_tile)
+        new_tile.call_after_refresh(new_tile.focus_input)
         self.app.notify(f"Yeni CLI bölmesi eklendi: [{cli_type}]", title="YENİ PENCERE")
 
     def handle_tile_action(self, action: str, tile_id: str, data: Dict[str, Any]) -> None:
@@ -343,6 +348,7 @@ class DynamicWorkspace(Vertical):
                 await v_box.mount(splitter)
                 await v_box.mount(new_tile)
 
+        new_tile.call_after_refresh(new_tile.focus_input)
         self.app.notify(f"Pencere bölündü: Yeni [{new_cli}] açıldı.", title="PENCERE BÖLÜNDÜ")
 
     async def close_tile(self, tile_id: str) -> None:

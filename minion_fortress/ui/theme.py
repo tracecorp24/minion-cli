@@ -285,8 +285,11 @@ CliTilePane:focus-within {{
 
 .tile-title-text {{
     width: 1fr;
+    height: 1;
     color: {BANANA_YELLOW};
     text-style: bold;
+    overflow-x: hidden;
+    text-overflow: ellipsis;
 }}
 
 .tile-actions-strip {{
@@ -324,11 +327,18 @@ CliTilePane:focus-within {{
 }}
 
 .tile-input-container {{
-    height: 1;
+    height: 3;
+    min-height: 3;
+    max-height: 3;
     background: #141414;
-    border-top: solid #333333;
+    border-top: heavy {BANANA_YELLOW};
     padding: 0 1;
     layout: horizontal;
+}}
+
+CliTilePane:focus-within .tile-input-container {{
+    border-top: heavy {HEAL_GREEN};
+    background: #181818;
 }}
 
 .tile-prompt-tag {{
@@ -347,6 +357,11 @@ CliTilePane:focus-within {{
     border: none;
     padding: 0;
     color: #FFFFFF;
+}}
+
+.tile-cli-input:focus {{
+    background: #000000;
+    color: {BANANA_YELLOW};
 }}
 
 CliTilePane .pane-container {{
