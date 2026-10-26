@@ -21,6 +21,7 @@ from rich.text import Text
 
 from minion_fortress.core.state import FortressState
 from minion_fortress.core.event_bus import EventBus, Event, EventType
+from minion_fortress.ui.panes.embedded_terminal import EmbeddedTerminalWidget
 
 
 class InteractiveShellPane(Vertical):
@@ -40,19 +41,54 @@ class InteractiveShellPane(Vertical):
         self.agy_flags: List[str] = ["--dangerously-skip-permissions"]
         self.on_mode_change = on_mode_change
         self.active_proc: Optional[asyncio.subprocess.Process] = None
+        self.log_history: List[Any] = []
+        self._is_closing: bool = False
+        self._current_terminal: Optional[EmbeddedTerminalWidget] = None
+        self._current_log: Optional[RichLog] = None
+
+    def _write_log(self, item: Any) -> None:
+        """Stores output into memory history and renders to RichLog widget safely."""
+        self.log_history.append(item)
+        try:
+            log = self.query_one("#shell-stream", RichLog)
+            log.write(item)
+        except Exception:
+            pass
 
     def compose(self) -> ComposeResult:
-        title = "🤖 ANTIGRAVITY AGENT CLI" if self.agy_mode else "💻 INTERACTIVE SHELL CLI"
+        title = "🤖 ANTIGRAVITY AGENT CLI" if self.agy_mode else "💻 GERÇEK GÖMÜLÜ TERMİNAL (ConPTY)"
         with Horizontal(classes="action-bar shell-action-bar"):
-            yield Static(f"{title} (Canlı Filtresiz Akış)", classes="shell-status-label", id="shell-title-static")
-            yield Button("🪟 Harici Tam Terminal Aç", id="btn-open-terminal", classes="shell-hdr-btn", tooltip="Yeni Windows Konsolunda %100 Filtresiz TUI/Terminal Başlat")
-        yield RichLog(id="shell-stream", classes="log-stream", highlight=True, markup=True, wrap=True, min_width=0)
+            yield Static(f"{title}", classes="shell-status-label", id="shell-title-static")
+            yield Button("🖥️ Terminal", id="btn-mode-terminal", classes="shell-hdr-btn active-btn", tooltip="Gerçek Gömülü ConPTY Konsolu")
+            yield Button("🤖 Agent Akışı", id="btn-mode-stream", classes="shell-hdr-btn", tooltip="Canlı Agent Ara Adım Akışı")
+            yield Button("🪟 Harici Konsol", id="btn-open-terminal", classes="shell-hdr-btn", tooltip="Yeni Windows Konsolunda Aç")
+
+        with Vertical(id="shell-view-container"):
+            if self._current_terminal is None:
+                self._current_terminal = EmbeddedTerminalWidget(id="embedded-pty-terminal")
+            yield self._current_terminal
+
+            if self._current_log is None:
+                self._current_log = RichLog(id="shell-stream", classes="log-stream", highlight=True, markup=True, wrap=True, min_width=0)
+            yield self._current_log
 
     def on_mount(self) -> None:
         log = self.query_one("#shell-stream", RichLog)
+        # If widget is remounted after layout split or DOM move, replay entire log history seamlessly!
+        if self.log_history:
+            if len(log.lines) == 0:
+                for item in self.log_history:
+                    log.write(item)
+            if self.agy_mode:
+                self.switch_to_stream_view()
+            else:
+                self.switch_to_terminal_view()
+            return
+
         cwd = os.getcwd()
         py_ver = sys.version.split()[0]
         if self.agy_mode:
+            self.switch_to_stream_view()
             banner = (
                 f"[bold #00FF7F]🤖 Antigravity AI Agent CLI Aktif[/bold #00FF7F]\n"
                 f"[dim]Working directory: {escape(cwd)} │ Parametreler: {' '.join(self.agy_flags)}[/dim]\n"
@@ -61,33 +97,61 @@ class InteractiveShellPane(Vertical):
                 f"• Yeni bağımsız Windows konsolunda tam TUI açmak için yukarıdaki butona tıklayın veya 'open agy' yazın.[/dim]\n"
             )
         else:
+            self.switch_to_terminal_view()
             banner = (
                 f"[bold #00FF7F]Minion-Fortress Shell v3.0[/bold #00FF7F] (Python {py_ver})\n"
                 f"[dim]Working directory: {escape(cwd)}[/dim]\n"
                 f"[cyan]Kullanılabilir: agy, python, dir, git, curl, fortress komutları, 'open <komut>' veya 'stop'.[/cyan]\n"
             )
-        log.write(banner)
+        self._write_log(banner)
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
-        if event.button.id == "btn-open-terminal":
+        btn_id = event.button.id
+        if btn_id == "btn-open-terminal":
             self.action_open_external_terminal()
+        elif btn_id == "btn-mode-terminal":
+            self.switch_to_terminal_view()
+        elif btn_id == "btn-mode-stream":
+            self.switch_to_stream_view()
+
+    def switch_to_terminal_view(self) -> None:
+        """Switches view to the real embedded ConPTY terminal."""
+        self.remove_class("shell-stream-active")
+        try:
+            title = self.query_one("#shell-title-static", Static)
+            title.update("💻 GERÇEK GÖMÜLÜ TERMİNAL (ConPTY Live)")
+            self.query_one("#btn-mode-terminal", Button).add_class("active-btn")
+            self.query_one("#btn-mode-stream", Button).remove_class("active-btn")
+            term = self.query_one("#embedded-pty-terminal", EmbeddedTerminalWidget)
+            term.focus()
+        except Exception:
+            pass
+
+    def switch_to_stream_view(self) -> None:
+        """Switches view to the live stream log."""
+        self.add_class("shell-stream-active")
+        try:
+            title = self.query_one("#shell-title-static", Static)
+            title.update("🤖 ANTIGRAVITY AGENT AKIŞI (Canlı Adımlar)")
+            self.query_one("#btn-mode-terminal", Button).remove_class("active-btn")
+            self.query_one("#btn-mode-stream", Button).add_class("active-btn")
+        except Exception:
+            pass
 
     def action_open_external_terminal(self, cmd_target: Optional[str] = None) -> None:
         """Launches a full, unfiltered, raw native OS terminal window with native ConPTY."""
-        log = self.query_one("#shell-stream", RichLog)
         target = cmd_target or ("agy" if self.agy_mode else "cmd.exe")
         try:
             if os.name == "nt":
                 subprocess.Popen(f'start "MINION-FORTRESS: Tam Terminal [{target}]" cmd /k "{target}"', shell=True)
             else:
                 subprocess.Popen(f'x-terminal-emulator -e "{target}" || xterm -e "{target}"', shell=True)
-            log.write(f"[bold green]✔ Harici filtresiz işletim sistemi terminali açıldı:[/bold green] [yellow]{target}[/yellow]")
+            self._write_log(f"[bold green]✔ Harici filtresiz işletim sistemi terminali açıldı:[/bold green] [yellow]{target}[/yellow]")
         except Exception as e:
-            log.write(f"[bold red]Harici terminal açılamadı:[/bold red] {escape(str(e))}")
+            self._write_log(f"[bold red]Harici terminal açılamadı:[/bold red] {escape(str(e))}")
 
     async def execute_command(self, cmd_str: str) -> None:
         """Executes a command safely without blocking the Textual event loop."""
-        log = self.query_one("#shell-stream", RichLog)
         cmd_str = cmd_str.strip()
         if not cmd_str:
             return
@@ -107,12 +171,12 @@ class InteractiveShellPane(Vertical):
                             subprocess.run(f"taskkill /F /T /PID {pid}", shell=True, capture_output=True)
                         else:
                             self.active_proc.kill()
-                        log.write(f"[bold red]🛑 Aktif Antigravity işlemi (PID: {pid}) durduruldu.[/bold red]")
+                        self._write_log(f"[bold red]🛑 Aktif Antigravity işlemi (PID: {pid}) durduruldu.[/bold red]")
                     except Exception as e:
-                        log.write(f"[red]İşlem durdurulamadı: {escape(str(e))}[/red]")
+                        self._write_log(f"[red]İşlem durdurulamadı: {escape(str(e))}[/red]")
                     self.active_proc = None
                 else:
-                    log.write("[dim yellow]Şu anda çalışan bir arka plan işlemi yok.[/dim yellow]")
+                    self._write_log("[dim yellow]Şu anda çalışan bir arka plan işlemi yok.[/dim yellow]")
                 return
 
             if cmd_lower in ("exit", "quit", "q", "/exit", "/quit", "exit()"):
@@ -127,13 +191,18 @@ class InteractiveShellPane(Vertical):
                     self.active_proc = None
 
                 self.agy_mode = False
+                self.switch_to_terminal_view()
                 if self.on_mode_change:
                     self.on_mode_change("shell", "Shell Komutu: dir, git, python, banana, heal, help...")
-                log.write("[dim yellow]Antigravity oturumu sonlandırıldı. Standart shell moduna dönüldü.[/dim yellow]")
+                self._write_log("[dim yellow]Antigravity oturumu sonlandırıldı. Standart terminal moduna dönüldü.[/dim yellow]")
                 return
 
             if cmd_lower in ("clear", "cls"):
-                log.clear()
+                self.log_history.clear()
+                try:
+                    self.query_one("#shell-stream", RichLog).clear()
+                except Exception:
+                    pass
                 return
 
             if cmd_lower in ("help", "?"):
@@ -145,7 +214,7 @@ class InteractiveShellPane(Vertical):
                     "• [yellow]open agy:[/yellow] Ayrı bir Windows konsolunda tam BubbleTea TUI olarak açar.\n"
                     "• [yellow]clear / cls:[/yellow] Ekranı temizler."
                 )
-                log.write(help_text)
+                self._write_log(help_text)
                 return
 
             if cmd_lower.startswith("open") or cmd_lower.startswith("start"):
@@ -156,7 +225,7 @@ class InteractiveShellPane(Vertical):
 
             # Check if previous turn is still running
             if self.active_proc and self.active_proc.returncode is None:
-                log.write("[dim yellow]⚠ Önceki Antigravity görevi hala çalışıyor. Durdurmak için 'stop' yazın.[/dim yellow]")
+                self._write_log("[dim yellow]⚠ Önceki Antigravity görevi hala çalışıyor. Durdurmak için 'stop' yazın.[/dim yellow]")
                 return
 
             # Strip leading 'agy' if user typed 'agy <prompt>'
@@ -170,7 +239,7 @@ class InteractiveShellPane(Vertical):
         # -------------------------------------------------------------
         # B. STANDARD SHELL MODE
         # -------------------------------------------------------------
-        log.write(f"\n[bold #FFE135]shell>[/bold #FFE135] [white]{escape(cmd_str)}[/white]")
+        self._write_log(f"\n[bold #FFE135]shell>[/bold #FFE135] [white]{escape(cmd_str)}[/white]")
 
         # 1. Process termination commands
         if cmd_lower in ("stop", "kill", "quit", "exit", "^c", "c"):
@@ -181,9 +250,9 @@ class InteractiveShellPane(Vertical):
                         subprocess.run(f"taskkill /F /T /PID {pid}", shell=True, capture_output=True)
                     else:
                         self.active_proc.kill()
-                    log.write(f"[bold red]🛑 Process (PID: {pid}) sonlandırıldı.[/bold red]")
+                    self._write_log(f"[bold red]🛑 Process (PID: {pid}) sonlandırıldı.[/bold red]")
                 except Exception as e:
-                    log.write(f"[red]Process sonlandırılamadı: {escape(str(e))}[/red]")
+                    self._write_log(f"[red]Process sonlandırılamadı: {escape(str(e))}[/red]")
                 self.active_proc = None
                 return
 
@@ -193,14 +262,18 @@ class InteractiveShellPane(Vertical):
                 if self.active_proc.stdin and not self.active_proc.stdin.is_closing():
                     self.active_proc.stdin.write(cmd_str.encode("utf-8") + b"\n")
                     await self.active_proc.stdin.drain()
-                    log.write(f"[dim yellow]→ [stdin]: {escape(cmd_str)}[/dim yellow]")
+                    self._write_log(f"[dim yellow]→ [stdin]: {escape(cmd_str)}[/dim yellow]")
                     return
             except Exception as e:
-                log.write(f"[dim red]Stdin iletilemedi: {escape(str(e))}[/dim red]")
+                self._write_log(f"[dim red]Stdin iletilemedi: {escape(str(e))}[/dim red]")
 
         # 3. Built-in quick commands
         if cmd_lower in ("clear", "cls"):
-            log.clear()
+            self.log_history.clear()
+            try:
+                self.query_one("#shell-stream", RichLog).clear()
+            except Exception:
+                pass
             return
 
         if cmd_lower in ("help", "?"):
@@ -213,7 +286,7 @@ class InteractiveShellPane(Vertical):
                 "• [yellow]Durdurma:[/yellow] Çalışan bir komutu 'stop' veya 'kill' yazarak sonlandırabilirsiniz.\n"
                 "• [yellow]clear / cls:[/yellow] Ekranı temizler."
             )
-            log.write(help_text)
+            self._write_log(help_text)
             return
 
         # 4. Fortress direct commands
@@ -227,7 +300,7 @@ class InteractiveShellPane(Vertical):
                     data={"command": cmd_str},
                 )
             )
-            log.write(f"[dim green]✔ Fortress Core'a iletildi: {escape(cmd_str)}[/dim green]")
+            self._write_log(f"[dim green]✔ Fortress Core'a iletildi: {escape(cmd_str)}[/dim green]")
             return
 
         # 5. Harici Pencerede Başlatma
@@ -248,6 +321,7 @@ class InteractiveShellPane(Vertical):
                 flags.append("--dangerously-skip-permissions")
             self.agy_flags = flags
             self.agy_mode = True
+            self.switch_to_stream_view()
             if self.on_mode_change:
                 self.on_mode_change("agy", "Antigravity'ye prompt yazın (Durdurmak için 'stop')...")
 
@@ -276,10 +350,18 @@ class InteractiveShellPane(Vertical):
                 f"[dim]• Çıkmak için: 'exit' veya 'stop' yazın.\n"
                 f"• Harici tam TUI penceresinde açmak isterseniz: 'open agy' veya yukarıdaki butona tıklayın.[/dim]\n"
             )
-            log.write(banner)
+            self._write_log(banner)
             return
 
         # 7. Doğrudan bu Bölmede (In-Pane) Canlı Akışlı Asenkron Çalıştırma
+        try:
+            term = self.query_one("#embedded-pty-terminal", EmbeddedTerminalWidget)
+            if term and term.pty and term.pty.isalive() and not self.has_class("shell-stream-active"):
+                term.write_command(cmd_str)
+                return
+        except Exception:
+            pass
+
         run_cmd = cmd_str
         if first == "python" and len(tokens) == 1:
             run_cmd = "python -i -q"
@@ -292,16 +374,16 @@ class InteractiveShellPane(Vertical):
                 stderr=asyncio.subprocess.PIPE,
             )
             self.active_proc = proc
-            log.write(f"[dim cyan]▶ Çalışıyor (PID: {proc.pid}) — Durdurmak için 'stop' yazabilirsiniz.[/dim cyan]")
+            self._write_log(f"[dim cyan]▶ Çalışıyor (PID: {proc.pid}) — Durdurmak için 'stop' yazabilirsiniz.[/dim cyan]")
             asyncio.create_task(self._stream_proc(proc, cmd_str))
         except Exception as e:
-            log.write(f"[bold red]Process başlatılamadı:[/bold red] {escape(str(e))}")
+            self._write_log(f"[bold red]Process başlatılamadı:[/bold red] {escape(str(e))}")
 
     async def _stream_agy_command(self, prompt_text: str) -> None:
         """Executes agy with --output-format stream-json to capture and render every intermediate step live."""
-        log = self.query_one("#shell-stream", RichLog)
-        log.write(f"\n[bold #00FF7F]agy>[/bold #00FF7F] [white]{escape(prompt_text)}[/white]")
-        log.write("[dim cyan]⚡ Antigravity çalışıyor (canlı ara adımlar aktarılıyor)...[/dim cyan]")
+        self.switch_to_stream_view()
+        self._write_log(f"\n[bold #00FF7F]agy>[/bold #00FF7F] [white]{escape(prompt_text)}[/white]")
+        self._write_log("[dim cyan]⚡ Antigravity çalışıyor (canlı ara adımlar aktarılıyor)...[/dim cyan]")
 
         agy_bin = shutil.which("agy") or "agy"
         cmd_args = [agy_bin] + self.agy_flags + ["-c", "-p", prompt_text, "--output-format", "stream-json"]
@@ -315,12 +397,10 @@ class InteractiveShellPane(Vertical):
             self.active_proc = proc
             asyncio.create_task(self._process_agy_stream(proc, prompt_text))
         except Exception as e:
-            log.write(f"[bold red]Antigravity başlatılamadı:[/bold red] {escape(str(e))}")
+            self._write_log(f"[bold red]Antigravity başlatılamadı:[/bold red] {escape(str(e))}")
 
     async def _process_agy_stream(self, proc: asyncio.subprocess.Process, prompt_text: str) -> None:
         """Parses and renders live stream-json events from agy."""
-        log = self.query_one("#shell-stream", RichLog)
-
         async def read_stdout():
             while True:
                 line = await proc.stdout.readline()
@@ -333,7 +413,7 @@ class InteractiveShellPane(Vertical):
                 try:
                     data = json.loads(raw_text)
                 except Exception:
-                    self.app.call_later(log.write, Text.from_ansi(raw_text))
+                    self.app.call_later(self._write_log, Text.from_ansi(raw_text))
                     continue
 
                 ev = data.get("event")
@@ -341,7 +421,7 @@ class InteractiveShellPane(Vertical):
                     init_data = data.get("init", {})
                     tools_count = len(init_data.get("tools", []))
                     self.app.call_later(
-                        log.write,
+                        self._write_log,
                         f"[dim cyan]🚀 [OTURUM BAŞLADI] Aktif Araç Sayısı: {tools_count}[/dim cyan]"
                     )
 
@@ -364,7 +444,7 @@ class InteractiveShellPane(Vertical):
                                 summary_parts.append(f"{k}={val_s}")
                             summary = " ".join(summary_parts)
                             self.app.call_later(
-                                log.write,
+                                self._write_log,
                                 f"[bold yellow]🔧 [ARA ADIM: {tool_name}][/bold yellow] [dim cyan]{escape(summary)}[/dim cyan]"
                             )
                         elif state == "DONE":
@@ -376,9 +456,9 @@ class InteractiveShellPane(Vertical):
                                 if len(lines) > 12:
                                     lines = lines[:10] + [f"... (+{len(lines)-10} satır daha)"]
                                 for l in lines:
-                                    self.app.call_later(log.write, f"  [dim white]│ {escape(l)}[/dim white]")
+                                    self.app.call_later(self._write_log, f"  [dim white]│ {escape(l)}[/dim white]")
                             self.app.call_later(
-                                log.write,
+                                self._write_log,
                                 f"  [dim green]✔ Araç tamamlandı ({dur:.2f}s)[/dim green]"
                             )
 
@@ -386,7 +466,7 @@ class InteractiveShellPane(Vertical):
                         if text_delta:
                             clean_delta = str(text_delta).rstrip("\r\n")
                             if clean_delta:
-                                self.app.call_later(log.write, Text.from_ansi(clean_delta))
+                                self.app.call_later(self._write_log, Text.from_ansi(clean_delta))
 
                 elif ev == "result":
                     res = data.get("result", {})
@@ -396,7 +476,7 @@ class InteractiveShellPane(Vertical):
                     status = res.get("status", "SUCCESS")
                     color = "green" if status == "SUCCESS" else "red"
                     self.app.call_later(
-                        log.write,
+                        self._write_log,
                         f"[bold {color}]✔ Antigravity görevi tamamlandı[/bold {color}] [dim]({dur:.1f}s • {tokens} token)[/dim]\n"
                     )
 
@@ -407,22 +487,20 @@ class InteractiveShellPane(Vertical):
                     break
                 text = line.decode("utf-8", errors="replace").strip()
                 if text:
-                    self.app.call_later(log.write, f"[dim red][agy-stderr] {escape(text)}[/dim red]")
+                    self.app.call_later(self._write_log, f"[dim red][agy-stderr] {escape(text)}[/dim red]")
 
         try:
             await asyncio.gather(read_stdout(), read_stderr())
             await proc.wait()
         except asyncio.CancelledError:
-            if proc.returncode is None:
+            if self._is_closing and proc.returncode is None:
                 proc.kill()
         finally:
-            if self.active_proc == proc:
+            if proc.returncode is not None and self.active_proc == proc:
                 self.active_proc = None
 
     async def _stream_proc(self, proc: asyncio.subprocess.Process, cmd_str: str) -> None:
         """Streams standard subprocess output with ANSI color support."""
-        log = self.query_one("#shell-stream", RichLog)
-
         async def read_stream(stream, is_err: bool = False):
             while True:
                 line = await stream.readline()
@@ -443,7 +521,7 @@ class InteractiveShellPane(Vertical):
                     if is_err:
                         err_prefix = Text("[ERR] ", style="bold red")
                         ansi_text = err_prefix + ansi_text
-                    self.app.call_later(log.write, ansi_text)
+                    self.app.call_later(self._write_log, ansi_text)
 
         try:
             await asyncio.gather(
@@ -452,14 +530,14 @@ class InteractiveShellPane(Vertical):
             )
             code = await proc.wait()
             if code == 0:
-                self.app.call_later(log.write, f"[dim green]✔ Tamamlandı ({escape(cmd_str)})[/dim green]")
+                self.app.call_later(self._write_log, f"[dim green]✔ Tamamlandı ({escape(cmd_str)})[/dim green]")
             else:
-                self.app.call_later(log.write, f"[dim red]Process sonlandı: exit code {code}[/dim red]")
+                self.app.call_later(self._write_log, f"[dim red]Process sonlandı: exit code {code}[/dim red]")
         except asyncio.CancelledError:
-            if proc.returncode is None:
+            if self._is_closing and proc.returncode is None:
                 proc.kill()
         finally:
-            if self.active_proc == proc:
+            if proc.returncode is not None and self.active_proc == proc:
                 self.active_proc = None
 
 

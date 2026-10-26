@@ -46,28 +46,28 @@ async def test_dynamic_workspace_presets():
         # Test Switching to 'single' preset
         btn_single = ws.query_one("#preset-single", Button)
         btn_single.press()
-        await pilot.pause(0.1)
+        await pilot.pause(0.2)
         assert ws.current_preset == "single"
         assert len(ws._active_tiles) == 1
 
         # Test Switching to 'split_v' preset
         btn_v = ws.query_one("#preset-split-v", Button)
         btn_v.press()
-        await pilot.pause(0.1)
+        await pilot.pause(0.2)
         assert ws.current_preset == "split_v"
         assert len(ws._active_tiles) == 2
 
         # Test Switching to 'main_stack' preset
         btn_stack = ws.query_one("#preset-main-stack", Button)
         btn_stack.press()
-        await pilot.pause(0.1)
+        await pilot.pause(0.2)
         assert ws.current_preset == "main_stack"
         assert len(ws._active_tiles) == 3
 
         # Test Switching to 'three_cols' preset
         btn_3 = ws.query_one("#preset-three-cols", Button)
         btn_3.press()
-        await pilot.pause(0.1)
+        await pilot.pause(0.2)
         assert ws.current_preset == "three_cols"
         assert len(ws._active_tiles) == 3
 
@@ -627,8 +627,12 @@ async def test_richlog_wrapping_and_no_horizontal_scroll():
         ws = app.query_one(DynamicWorkspace)
         tile = ws._active_tiles["tile_1"]
 
-        # Switch to shell and verify RichLog configuration
+        # Switch to shell and verify RichLog configuration in stream view
         await tile.switch_cli("shell")
+        await pilot.pause(0.1)
+
+        shell_pane = tile.query_one(InteractiveShellPane)
+        shell_pane.switch_to_stream_view()
         await pilot.pause(0.1)
 
         from textual.widgets import RichLog
@@ -644,5 +648,57 @@ async def test_richlog_wrapping_and_no_horizontal_scroll():
         assert log.max_scroll_x == 0
 
         await app.action_quit()
+
+
+@pytest.mark.asyncio
+async def test_split_tile_preserves_process_and_terminal_resizes_dynamically():
+    """Verify that splitting a tile preserves running terminal processes, and terminal adapts dynamically when widened."""
+    state = FortressState()
+    bus = EventBus()
+
+    app = MinionFortressApp(
+        state=state,
+        event_bus=bus,
+        auto_spawn_detached=False,
+        initial_preset="single",
+    )
+
+    async with app.run_test(size=(100, 30)) as pilot:
+        await pilot.pause(0.2)
+        ws = app.query_one(DynamicWorkspace)
+        t1 = ws._active_tiles["tile_1"]
+
+        # Switch to shell
+        await t1.switch_cli("shell")
+        await pilot.pause(0.1)
+
+        shell_pane = t1.query_one(InteractiveShellPane)
+        from minion_fortress.ui.panes.embedded_terminal import EmbeddedTerminalWidget
+        term = shell_pane.query_one(EmbeddedTerminalWidget)
+        assert term is not None
+
+        # Add a test log line to verify log history retention
+        shell_pane._write_log("TEST_PRESERVED_LINE")
+        initial_cols = term.cols
+
+        # Perform horizontal split
+        await ws.split_tile("tile_1", direction="horizontal")
+        await pilot.pause(0.2)
+
+        # Confirm tile_1 is still active and shell_pane is preserved
+        assert "tile_1" in ws._active_tiles
+        t1_after = ws._active_tiles["tile_1"]
+        shell_after = t1_after.query_one(InteractiveShellPane)
+        assert shell_after is shell_pane
+        assert "TEST_PRESERVED_LINE" in shell_after.log_history
+
+        # Simulate resize / widening
+        from textual.geometry import Size
+        new_cols = initial_cols + 20
+        term.on_resize(events.Resize(Size(new_cols, 20), Size(new_cols, 20)))
+        assert term.cols == new_cols
+
+        await app.action_quit()
+
 
 

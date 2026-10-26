@@ -231,6 +231,33 @@ RichLog {{
     text-style: bold;
 }}
 
+#shell-view-container {{
+    height: 1fr;
+    width: 100%;
+    padding: 0;
+    margin: 0;
+}}
+
+#embedded-pty-terminal {{
+    height: 1fr;
+    width: 100%;
+    display: block;
+}}
+
+.shell-stream-active #embedded-pty-terminal {{
+    display: none;
+}}
+
+.shell-stream-active #shell-stream {{
+    display: block;
+}}
+
+#shell-stream {{
+    height: 1fr;
+    width: 100%;
+    display: none;
+}}
+
 Button {{
     background: #2A2A2A;
     color: {BANANA_YELLOW};

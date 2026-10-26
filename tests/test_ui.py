@@ -162,25 +162,25 @@ async def test_sidebar_tabs_and_single_initial_window():
 
         # 3. Click Shell tab in sidebar -> switches to shell
         btn_shell.press()
-        await pilot.pause(0.1)
+        await pilot.pause(0.2)
         assert first_tile.cli_type == "shell"
         assert "sidebar-tab-active" in btn_shell.classes
 
         # 4. Click Error tab in sidebar -> switches to error
         btn_error.press()
-        await pilot.pause(0.1)
+        await pilot.pause(0.2)
         assert first_tile.cli_type == "error"
         assert "sidebar-tab-active" in btn_error.classes
 
         # 5. Click Sniper tab in sidebar -> switches to sniper
         btn_sniper.press()
-        await pilot.pause(0.1)
+        await pilot.pause(0.2)
         assert first_tile.cli_type == "sniper"
         assert "sidebar-tab-active" in btn_sniper.classes
 
         # 6. Click Plugins tab in sidebar -> switches to plugins
         btn_plugins.press()
-        await pilot.pause(0.1)
+        await pilot.pause(0.2)
         assert first_tile.cli_type == "plugins"
         assert "sidebar-tab-active" in btn_plugins.classes
 

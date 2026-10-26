@@ -6,6 +6,7 @@ per-tile CLI selection, detaching to independent OS windows, and layout presets.
 
 from __future__ import annotations
 import os
+import math
 import shutil
 import subprocess
 import sys
@@ -129,6 +130,7 @@ class DynamicWorkspace(Vertical):
             yield Button("⊞ 2x2 Grid", id="preset-grid-2x2", classes="preset-btn", tooltip="4'lü 2x2 Izgara")
             yield Button("◰ Ana + Yan", id="preset-main-stack", classes="preset-btn", tooltip="Sol Ana + Sağ Yan Sütun")
             yield Button("⫴ 3 Sütun", id="preset-three-cols", classes="preset-btn", tooltip="Üç Dikey Sütun")
+            yield Button("🗖 Tümünü Sığdır", id="preset-fit-all", classes="preset-btn", tooltip="Tüm Pencereleri Otomatik Satır ve Sütunlara Sığdır")
             yield Button("➕ Yeni CLI", id="preset-add-tile", classes="preset-btn", tooltip="Yeni CLI Bölmesi Ekle")
 
         # Dynamic Tiling Container Canvas
@@ -176,10 +178,11 @@ class DynamicWorkspace(Vertical):
         self._active_tiles[tid] = tile
         return tile
 
-    async def apply_preset(self, preset_name: str) -> None:
+    async def apply_preset(self, preset_name: str, target_tiles: Optional[List[str]] = None) -> None:
         """Instantly rearranges workspace panes into a chosen preset layout."""
         self.current_preset = preset_name
         canvas = self.query_one("#workspace-canvas", Vertical)
+        existing_types = [t.cli_type for t in self._active_tiles.values()]
         for child in list(canvas.children):
             await child.remove()
         self._active_tiles.clear()
@@ -195,7 +198,8 @@ class DynamicWorkspace(Vertical):
 
         if preset_name == "single":
             tile = self._create_tile("minion-01")
-            await canvas.mount(tile)
+            col = Horizontal(tile, classes="split-col")
+            await canvas.mount(col)
 
         elif preset_name == "split_v":
             t1 = self._create_tile("minion-01")
@@ -212,9 +216,6 @@ class DynamicWorkspace(Vertical):
             await canvas.mount(container)
 
         elif preset_name == "grid_2x2":
-            # 2 rows x 2 cols with horizontal and vertical drag splitters
-            v_splitter = DragSplitter(direction="vertical")
-
             t1 = self._create_tile("minion-01")
             t2 = self._create_tile("error")
             t3 = self._create_tile("sniper")
@@ -222,11 +223,11 @@ class DynamicWorkspace(Vertical):
 
             h_split1 = DragSplitter(direction="horizontal")
             h_split2 = DragSplitter(direction="horizontal")
+            v_splitter = DragSplitter(direction="vertical")
 
             top_row = Horizontal(t1, h_split1, t2, classes="split-col")
             bot_row = Horizontal(t3, h_split2, t4, classes="split-col")
             container = Vertical(top_row, v_splitter, bot_row, classes="split-row")
-
             await canvas.mount(container)
 
         elif preset_name == "main_stack":
@@ -239,7 +240,6 @@ class DynamicWorkspace(Vertical):
 
             right_stack = Vertical(t2, v_splitter, t3, classes="split-row")
             main_container = Horizontal(t1, h_splitter, right_stack, classes="split-col")
-
             await canvas.mount(main_container)
 
         elif preset_name == "three_cols":
@@ -252,11 +252,76 @@ class DynamicWorkspace(Vertical):
             container = Horizontal(t1, s1, t2, s2, t3, classes="split-col")
             await canvas.mount(container)
 
+        elif preset_name == "fit_all":
+            # If explicit target_tiles provided, use them;
+            # If multiple tiles were already open, arrange all of them;
+            # If only 1 tile was open, fit all 5 core tab types!
+            if target_tiles:
+                types_to_fit = target_tiles
+            elif len(existing_types) > 1:
+                types_to_fit = existing_types
+            else:
+                types_to_fit = ["minion-01", "shell", "error", "sniper", "plugins"]
+
+            await self._build_grid_layout(canvas, types_to_fit)
+
         if self._active_tiles:
             first_tile = next(iter(self._active_tiles.values()))
             first_tile.call_after_refresh(first_tile.focus_input)
 
         self.app.notify(f"Düzen uygulandı: {preset_name}", title="LAYOUT DEĞİŞTİ", severity="information")
+
+    async def _build_grid_layout(self, canvas: Vertical, cli_types: List[str]) -> None:
+        """Arranges any list of cli_types into an optimal grid of rows and columns with splitters."""
+        tiles = [self._create_tile(ctype) for ctype in cli_types]
+        n = len(tiles)
+        if n == 0:
+            return
+
+        if n == 1:
+            col = Horizontal(tiles[0], classes="split-col")
+            await canvas.mount(col)
+            return
+
+        if n in (2, 3):
+            # 1 row with columns
+            h_children = []
+            for i, t in enumerate(tiles):
+                if i > 0:
+                    h_children.append(DragSplitter(direction="horizontal"))
+                h_children.append(t)
+            container = Horizontal(*h_children, classes="split-col")
+            await canvas.mount(container)
+            return
+
+        # n >= 4: distribute into optimal rows
+        num_rows = max(2, round(math.sqrt(n)))
+        base = n // num_rows
+        rem = n % num_rows
+        rows: List[List[CliTilePane]] = []
+        idx = 0
+        for r in range(num_rows):
+            count = base + (1 if r < rem else 0)
+            rows.append(tiles[idx : idx + count])
+            idx += count
+
+        row_widgets = []
+        for r_idx, row_tiles in enumerate(rows):
+            if r_idx > 0:
+                row_widgets.append(DragSplitter(direction="vertical"))
+
+            if len(row_tiles) == 1:
+                row_widgets.append(row_tiles[0])
+            else:
+                h_children = []
+                for c_idx, t in enumerate(row_tiles):
+                    if c_idx > 0:
+                        h_children.append(DragSplitter(direction="horizontal"))
+                    h_children.append(t)
+                row_widgets.append(Horizontal(*h_children, classes="split-col"))
+
+        container = Vertical(*row_widgets, classes="split-row")
+        await canvas.mount(container)
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
         btn_id = event.button.id or ""
@@ -272,6 +337,8 @@ class DynamicWorkspace(Vertical):
             self.run_worker(self.apply_preset("main_stack"))
         elif btn_id == "preset-three-cols":
             self.run_worker(self.apply_preset("three_cols"))
+        elif btn_id == "preset-fit-all":
+            self.run_worker(self.apply_preset("fit_all"))
         elif btn_id == "preset-add-tile":
             self.run_worker(self.add_new_tile())
 
@@ -326,10 +393,14 @@ class DynamicWorkspace(Vertical):
                 h_box.styles.height = "1fr"
                 h_box.styles.width = "100%"
                 await parent.mount(h_box, after=target_tile)
-                await target_tile.remove()
-                await h_box.mount(target_tile)
-                await h_box.mount(splitter)
-                await h_box.mount(new_tile)
+                target_tile._is_moving = True
+                try:
+                    await target_tile.remove()
+                    await h_box.mount(target_tile)
+                    await h_box.mount(splitter)
+                    await h_box.mount(new_tile)
+                finally:
+                    target_tile._is_moving = False
         else:
             # Vertical split
             if isinstance(parent, Vertical) and parent.id != "workspace-canvas":
@@ -340,10 +411,14 @@ class DynamicWorkspace(Vertical):
                 v_box.styles.width = "1fr"
                 v_box.styles.height = "100%"
                 await parent.mount(v_box, after=target_tile)
-                await target_tile.remove()
-                await v_box.mount(target_tile)
-                await v_box.mount(splitter)
-                await v_box.mount(new_tile)
+                target_tile._is_moving = True
+                try:
+                    await target_tile.remove()
+                    await v_box.mount(target_tile)
+                    await v_box.mount(splitter)
+                    await v_box.mount(new_tile)
+                finally:
+                    target_tile._is_moving = False
 
         new_tile.call_after_refresh(new_tile.focus_input)
         self.app.notify(f"Pencere bölündü: Yeni [{new_cli}] açıldı.", title="PENCERE BÖLÜNDÜ")
@@ -357,6 +432,24 @@ class DynamicWorkspace(Vertical):
         target_tile = self._active_tiles.pop(tile_id, None)
         if not target_tile:
             return
+
+        # Explicitly terminate active background processes and PTY on close
+        if hasattr(target_tile, "_current_widget") and target_tile._current_widget:
+            w = target_tile._current_widget
+            setattr(w, "_is_closing", True)
+            if hasattr(w, "active_proc") and w.active_proc:
+                try:
+                    w.active_proc.kill()
+                except Exception:
+                    pass
+            if hasattr(w, "_current_terminal") and w._current_terminal:
+                term = w._current_terminal
+                term._is_closing = True
+                if term.pty and term.pty.isalive():
+                    try:
+                        term.pty.terminate()
+                    except Exception:
+                        pass
 
         parent = target_tile.parent
         await target_tile.remove()

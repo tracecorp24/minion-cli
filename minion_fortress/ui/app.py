@@ -78,6 +78,7 @@ class MinionFortressApp(App):
         Binding("f8", "export_session", "📤 Export Session", priority=True),
         Binding("f4", "spawn_detached", "🪟 Detach Window", priority=True),
         Binding("f5", "rescan_plugins", "🔄 Rescan Plugins", priority=True),
+        Binding("f9", "fit_all_layout", "🗖 Tümünü Sığdır", priority=True),
         Binding("ctrl+q", "quit", "Quit Fortress", priority=True),
     ]
 
@@ -237,7 +238,9 @@ class MinionFortressApp(App):
             "tab-btn-plugins": "plugins",
         }
         if btn_id in tab_targets:
-            self.run_worker(self._switch_and_update_tab(tab_targets[btn_id]))
+            target_cli = tab_targets[btn_id]
+            self._update_sidebar_tab_highlight(target_cli)
+            self.run_worker(self._switch_and_update_tab(target_cli))
 
     async def _switch_and_update_tab(self, cli_type: str) -> None:
         """Switches active workspace pane to selected CLI tab and updates sidebar highlight."""

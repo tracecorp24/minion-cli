@@ -95,6 +95,75 @@ class DragSplitter(Static):
         prev_w, _ = self._get_adjacent_pair()
         return prev_w
 
+    def _get_combined_size(self, prev_w, next_w) -> int:
+        """Calculates total available space for adjacent widgets including container slack."""
+        if self.direction == "horizontal":
+            s_prev = prev_w.outer_size.width or prev_w.size.width or 40
+            s_next = (next_w.outer_size.width or next_w.size.width or 40) if next_w else 0
+            base = s_prev + s_next
+            if self.parent and self.parent.size.width > 0:
+                parent_w = self.parent.content_size.width or self.parent.size.width
+                other_w = sum(
+                    (c.outer_size.width or c.size.width or 0)
+                    for c in self.parent.children
+                    if c not in (prev_w, next_w)
+                )
+                avail = parent_w - other_w
+                if avail > base:
+                    return avail
+            return base
+        else:
+            s_prev = prev_w.outer_size.height or prev_w.size.height or 15
+            s_next = (next_w.outer_size.height or next_w.size.height or 15) if next_w else 0
+            base = s_prev + s_next
+            if self.parent and self.parent.size.height > 0:
+                parent_h = self.parent.content_size.height or self.parent.size.height
+                other_h = sum(
+                    (c.outer_size.height or c.size.height or 0)
+                    for c in self.parent.children
+                    if c not in (prev_w, next_w)
+                )
+                avail = parent_h - other_h
+                if avail > base:
+                    return avail
+            return base
+
+    def _convert_targets_to_flex(self) -> None:
+        """Converts fixed pixel/cell widths/heights back into proportional fr units so panes dynamically adapt when window is resized."""
+        if not self.parent:
+            return
+
+        non_splitters = [c for c in self.parent.children if not isinstance(c, DragSplitter)]
+        if not non_splitters:
+            return
+
+        if self.direction == "horizontal":
+            total_w = sum((c.outer_size.width or c.size.width or 10) for c in non_splitters)
+            if total_w > 0:
+                for c in non_splitters:
+                    w = c.outer_size.width or c.size.width or 10
+                    fr = max(0.1, round((w / total_w) * len(non_splitters), 2))
+                    c.styles.width = f"{fr}fr"
+        else:
+            total_h = sum((c.outer_size.height or c.size.height or 10) for c in non_splitters)
+            if total_h > 0:
+                for c in non_splitters:
+                    h = c.outer_size.height or c.size.height or 10
+                    fr = max(0.1, round((h / total_h) * len(non_splitters), 2))
+                    c.styles.height = f"{fr}fr"
+
+    def on_click(self, event: events.Click) -> None:
+        if event.button == 1 and event.chain == 2:  # Double click resets to equal balance
+            if self.parent:
+                for c in self.parent.children:
+                    if not isinstance(c, DragSplitter):
+                        if self.direction == "horizontal":
+                            c.styles.width = "1fr"
+                        else:
+                            c.styles.height = "1fr"
+                self.refresh()
+                event.stop()
+
     def on_mouse_down(self, event: events.MouseDown) -> None:
         if event.button == 1:  # Left mouse button for drag
             prev_w, next_w = self._get_adjacent_pair()
@@ -107,7 +176,7 @@ class DragSplitter(Static):
             self.prev_target = prev_w
             self.next_target = next_w
 
-            # Freeze sibling non-splitter widgets to outer_size to prevent flex-box jumping
+            # Freeze sibling non-splitter widgets to outer_size during active drag
             if self.parent:
                 for child in self.parent.children:
                     if not isinstance(child, DragSplitter):
@@ -123,6 +192,7 @@ class DragSplitter(Static):
                 self.initial_prev_size = prev_w.outer_size.height or prev_w.size.height or 15
                 self.initial_next_size = (next_w.outer_size.height or next_w.size.height or 15) if next_w else 0
 
+            self.combined_size = self._get_combined_size(prev_w, next_w)
             self.add_class("active-drag")
             self.capture_mouse()
             event.stop()
@@ -134,7 +204,7 @@ class DragSplitter(Static):
         if self.direction == "horizontal":
             total_dx = event.screen_x - self.start_x
             if self.next_target:
-                combined = self.initial_prev_size + self.initial_next_size
+                combined = getattr(self, "combined_size", self.initial_prev_size + self.initial_next_size)
                 min_w = 12
                 if combined >= 2 * min_w:
                     new_prev = max(min_w, min(combined - min_w, self.initial_prev_size + total_dx))
@@ -147,7 +217,7 @@ class DragSplitter(Static):
         else:
             total_dy = event.screen_y - self.start_y
             if self.next_target:
-                combined = self.initial_prev_size + self.initial_next_size
+                combined = getattr(self, "combined_size", self.initial_prev_size + self.initial_next_size)
                 min_h = 5
                 if combined >= 2 * min_h:
                     new_prev = max(min_h, min(combined - min_h, self.initial_prev_size + total_dy))

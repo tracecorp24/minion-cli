@@ -189,6 +189,7 @@ class CliTilePane(Vertical):
         self.plugin_manager = plugin_manager
         self.on_action = on_action
         self._current_widget = None
+        self._current_input = None
         self.history: list[str] = []
         self.history_index: int = 0
         self._draft_input: str = ""
@@ -211,11 +212,13 @@ class CliTilePane(Vertical):
         # Dedicated per-tile command prompt
         with Horizontal(classes="tile-input-container"):
             yield Static(f"[{self.cli_type}]>", id=f"prompt-lbl-{self.tile_id}", classes="tile-prompt-tag", markup=False)
-            yield CliCommandInput(
-                placeholder=self._get_input_placeholder(),
-                id=f"input-{self.tile_id}",
-                classes="tile-cli-input",
-            )
+            if self._current_input is None:
+                self._current_input = CliCommandInput(
+                    placeholder=self._get_input_placeholder(),
+                    id=f"input-{self.tile_id}",
+                    classes="tile-cli-input",
+                )
+            yield self._current_input
 
     def _format_title(self) -> str:
         tag_map = {
@@ -249,6 +252,9 @@ class CliTilePane(Vertical):
         return "Komut girin..."
 
     def _create_cli_widget(self):
+        if self._current_widget is not None:
+            return self._current_widget
+
         if self.cli_type.startswith("minion-"):
             mid = self.cli_type.replace("minion-", "")
             w = MinionPane(self.state, self.event_bus, initial_minion_id=mid)
@@ -304,6 +310,7 @@ class CliTilePane(Vertical):
             return
 
         self.cli_type = new_cli_type
+        self._current_widget = None
         # Update title
         title_widget = self.query_one(f"#title-{self.tile_id}", Static)
         title_widget.update(self._format_title())
