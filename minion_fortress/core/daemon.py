@@ -43,11 +43,11 @@ class MinionDaemon:
     def _init_minions(self) -> None:
         """Initializes default minions cleanly without mock task spam."""
         initial_configs = [
-            ("01", "ast-parser", MinionStatus.RUNNING, "qwen-2.5-coder", "Hazır (Boşta)"),
-            ("02", "net-mon", MinionStatus.IDLE, "glm-4-flash", "Hazır (Boşta)"),
-            ("03", "quant", MinionStatus.BUSY, "deepseek-r1", "Hazır (Boşta)"),
-            ("04", "doc-ext", MinionStatus.PAUSED, "qwen-2.5-coder", "Hazır (Boşta)"),
-            ("05", "code-synth", MinionStatus.RUNNING, "qwen-2.5-coder", "Hazır (Boşta)"),
+            ("01", "Minion-01", MinionStatus.RUNNING, "core-agent", "Hazır"),
+            ("02", "Minion-02", MinionStatus.IDLE, "worker-agent", "Hazır"),
+            ("03", "Minion-03", MinionStatus.BUSY, "task-agent", "Hazır"),
+            ("04", "Minion-04", MinionStatus.PAUSED, "worker-agent", "Hazır"),
+            ("05", "Minion-05", MinionStatus.RUNNING, "cli-agent", "Hazır"),
         ]
 
         for mid, name, status, model, task in initial_configs:

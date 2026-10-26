@@ -202,3 +202,68 @@ async def test_sidebar_tabs_and_single_initial_window():
         for t in ws._active_tiles.values():
             assert t.cli_type.startswith("minion-") or t.cli_type in ("shell", "agy")
         await app.action_quit()
+
+
+@pytest.mark.asyncio
+async def test_real_telemetry_and_minion_roster_interactivity():
+    """Verify that:
+    1. Cluster telemetry and top banner contain genuine system metrics without fake tasks (1420) or VRAM (18.4GB).
+    2. Minion roster table displays real minion agents with columns AJAN, DURUM, KONUM.
+    3. Selecting a row in the minion roster table switches/opens that minion in the workspace.
+    """
+    from minion_fortress.ui.workspace import DynamicWorkspace
+    from textual.widgets import DataTable
+    from textual.widgets._data_table import RowKey
+
+    state = FortressState()
+    bus = EventBus()
+    plugin_mgr = PluginManager()
+    daemon = MinionDaemon(state, bus, plugin_mgr)
+
+    app = MinionFortressApp(
+        state=state,
+        event_bus=bus,
+        daemon=daemon,
+        plugin_manager=plugin_mgr,
+        auto_spawn_detached=False,
+        initial_preset="single",
+    )
+
+    async with app.run_test() as pilot:
+        await pilot.pause(0.2)
+
+        # 1. Verify telemetry box contains real metrics and NO fake mockup numbers
+        tbox_text = app._render_telemetry_box()
+        assert "1420" not in tbox_text
+        assert "1445" not in tbox_text
+        assert "$0.042" not in tbox_text
+        assert "Sistem:" in tbox_text
+        assert "Fortress:" in tbox_text
+        assert "IPC: 42010" in tbox_text
+
+        # 2. Verify top banner contains NO fake VRAM
+        banner_text = app._build_top_banner()
+        assert "VRAM: 18.4GB" not in banner_text
+        assert "Fortress:" in banner_text
+
+        # 3. Verify minion roster table structure and contents
+        table = app.query_one("#minion-roster-table", DataTable)
+        col_labels = [c.label.plain for c in table.columns.values()]
+        assert "AJAN" in col_labels
+        assert "DURUM" in col_labels
+        assert "KONUM" in col_labels
+        assert len(table.rows) >= 5
+
+        # 4. Initially Minion-01 is open on screen
+        ws = app.query_one(DynamicWorkspace)
+        assert next(iter(ws._active_tiles.values())).cli_type == "minion-01"
+
+        # Trigger selection of minion 02
+        await app.on_data_table_row_selected(DataTable.RowSelected(table, table.get_row_index("02"), RowKey("02")))
+        await pilot.pause(0.2)
+
+        # Active tile should now be minion-02
+        assert next(iter(ws._active_tiles.values())).cli_type == "minion-02"
+
+        await app.action_quit()
+

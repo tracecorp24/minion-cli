@@ -615,4 +615,22 @@ DragSplitter.active-drag {{
     padding: 0 1 !important;
     color: {BANANA_GOLD};
 }}
+
+#minion-roster-table {{
+    height: auto;
+    max-height: 9;
+    border: solid {BORDER_GRAY};
+    background: #0E0E0E;
+    margin-bottom: 1;
+}}
+
+#minion-roster-table:focus {{
+    border: solid #00FF7F;
+}}
+
+#minion-roster-table > .datatable--cursor {{
+    background: #252525;
+    color: #00FF7F;
+    text-style: bold;
+}}
 """

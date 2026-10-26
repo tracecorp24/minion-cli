@@ -158,7 +158,7 @@ class MinionFortressApp(App):
         # Set up Minion Roster Table
         table = self.query_one("#minion-roster-table", DataTable)
         table.cursor_type = "row"
-        table.add_columns("ID", "NAME", "STATUS", "CPU", "MODEL")
+        table.add_columns("AJAN", "DURUM", "KONUM")
         self._populate_roster_table()
 
         # Periodic UI refresh loop (Zero-lag batching)
@@ -175,52 +175,129 @@ class MinionFortressApp(App):
 
     def _build_top_banner(self) -> str:
         cpu = psutil.cpu_percent(interval=None)
-        ram_gb = psutil.virtual_memory().used / (1024 * 1024 * 1024)
+        vmem = psutil.virtual_memory()
+        ram_gb = vmem.used / (1024 * 1024 * 1024)
+        ram_total = vmem.total / (1024 * 1024 * 1024)
         status_text = "🍌 STATUS: BANANA! 🟡" if self.state.banana_mode else "STATUS: NORMAL 🟢"
         active_count = self.state.get_active_minion_count()
         total_count = self.state.get_total_minion_count()
         pid = os.getpid()
+        try:
+            p_mem = self.process.memory_info().rss / (1024 * 1024)
+        except Exception:
+            p_mem = 0.0
 
         return (
-            f" 🍌 MINION FORTRESS v3.0 │ {status_text} │ Active: {active_count}/{total_count} │ "
-            f"CPU: {cpu}% │ RAM: {ram_gb:.1f}GB │ VRAM: 18.4GB │ [PID: {pid}]"
+            f" 🍌 MINION FORTRESS v3.0 │ {status_text} │ Ajanlar: {active_count}/{total_count} │ "
+            f"CPU: %{cpu:.1f} │ RAM: {ram_gb:.1f}/{ram_total:.1f}GB (%{vmem.percent:.1f}) │ Fortress: {p_mem:.1f}MB │ [PID: {pid}]"
         )
 
     def _render_telemetry_box(self) -> str:
-        rate = (self.state.completed_tasks / max(1, self.state.total_tasks)) * 100
-        cost = self.state.token_cost
+        cpu = psutil.cpu_percent(interval=None)
+        vmem = psutil.virtual_memory()
         uptime = int(time.time() - self.state.start_time)
+        err_count = len(self.state.error_logs)
+        log_count = len(self.state.global_logs)
+
+        try:
+            p_mem = self.process.memory_info().rss / (1024 * 1024)
+            threads = self.process.num_threads()
+        except Exception:
+            p_mem = 0.0
+            threads = 1
+
+        active_tiles_count = 0
+        try:
+            ws = self.query_one(DynamicWorkspace)
+            active_tiles_count = len(ws._active_tiles)
+        except Exception:
+            pass
+
         return (
-            f"• Tasks: {self.state.completed_tasks}/{self.state.total_tasks} ({rate:.1f}%)\n"
-            f"• Token Cost: ${cost:.4f}\n"
-            f"• Uptime: {uptime}s │ Errors Caught: {len(self.state.error_logs)}\n"
-            f"• Watchdog Shield: ARMED (5s auto-heal)"
+            f"• Sistem: CPU %{cpu:.1f} │ RAM %{vmem.percent:.1f}\n"
+            f"• Fortress: {p_mem:.1f} MB (Thread: {threads})\n"
+            f"• Uptime: {uptime}s │ Log: {log_count} │ Hata: {err_count}\n"
+            f"• Açık Bölmeler: {active_tiles_count} │ IPC: 42010"
         )
 
     def _populate_roster_table(self) -> None:
         try:
             table = self.query_one("#minion-roster-table", DataTable)
-            table.clear()
-            for mid, m in self.state.minions.items():
-                st_color = {
-                    MinionStatus.RUNNING: "green",
-                    MinionStatus.BUSY: "cyan",
-                    MinionStatus.IDLE: "dim",
-                    MinionStatus.ERROR: "bold red",
-                    MinionStatus.PAUSED: "yellow",
-                    MinionStatus.HEALING: "bold magenta",
-                }.get(m.status, "white")
+            if not table.columns:
+                table.cursor_type = "row"
+                table.add_columns("AJAN", "DURUM", "KONUM")
 
-                table.add_row(
-                    f"[{st_color}]{m.id}[/{st_color}]",
-                    f"[{st_color}]{m.name}[/{st_color}]",
-                    f"[{st_color}]{m.status.value}[/{st_color}]",
-                    f"{m.cpu}%",
-                    m.model,
-                    key=m.id,
-                )
+            # Discover which minions are currently open in workspace tiles
+            active_minions_on_screen: Dict[str, str] = {}
+            try:
+                ws = self.query_one(DynamicWorkspace)
+                for idx, (tid, tile) in enumerate(ws._active_tiles.items()):
+                    if tile.cli_type.startswith("minion-"):
+                        mid = tile.cli_type.replace("minion-", "")
+                        active_minions_on_screen[mid] = f"Bölme #{idx + 1}"
+            except Exception:
+                pass
+
+            current_row_keys = {k.value if hasattr(k, "value") else str(k) for k in table.rows.keys()}
+
+            for mid, m in self.state.minions.items():
+                is_on_screen = mid in active_minions_on_screen
+
+                if m.status == MinionStatus.PAUSED:
+                    st_text = "[yellow]⏸ DURAKLADI[/yellow]"
+                elif m.status == MinionStatus.ERROR:
+                    st_text = "[bold red]✖ HATA[/bold red]"
+                elif is_on_screen:
+                    st_text = "[bold #00FF7F]● EKRANDA[/bold #00FF7F]"
+                elif m.status in (MinionStatus.RUNNING, MinionStatus.BUSY):
+                    st_text = "[cyan]⚙ ÇALIŞIYOR[/cyan]"
+                else:
+                    st_text = "[dim]○ BEKLEMEDE[/dim]"
+
+                loc_text = active_minions_on_screen.get(mid, "[cyan]Tıkla & Aç ↵[/cyan]")
+                agent_label = f"🤖 Minion-{mid}"
+
+                if mid in current_row_keys:
+                    table.update_cell(mid, "AJAN", agent_label)
+                    table.update_cell(mid, "DURUM", st_text)
+                    table.update_cell(mid, "KONUM", loc_text)
+                else:
+                    table.add_row(agent_label, st_text, loc_text, key=mid)
         except Exception:
             pass
+
+    async def on_data_table_row_selected(self, event: DataTable.RowSelected) -> None:
+        """When a minion is clicked in the Roster table, open or focus it in the workspace."""
+        if event.data_table.id != "minion-roster-table":
+            return
+        row_key = event.row_key.value if event.row_key else ""
+        if not row_key:
+            return
+        minion_id = str(row_key)
+        target_cli = f"minion-{minion_id}"
+
+        try:
+            ws = self.query_one(DynamicWorkspace)
+        except Exception:
+            return
+
+        # Check if already open on screen
+        found_tile = None
+        for tile in ws._active_tiles.values():
+            if tile.cli_type == target_cli:
+                found_tile = tile
+                break
+
+        if found_tile:
+            found_tile.focus_input()
+            self.notify(f"🤖 Minion-{minion_id} penceresine odaklanıldı.", title="AJAN AKTİF")
+        else:
+            await ws.switch_active_or_first_tile(target_cli)
+            self.notify(f"🤖 Minion-{minion_id} çalışma alanına açıldı.", title="AJAN YÜKLENDİ")
+
+        self.current_active_tab = target_cli
+        self._update_sidebar_tab_highlight(target_cli)
+        self._populate_roster_table()
 
     def _periodic_ui_refresh(self) -> None:
         """Lightweight UI sync every second."""
@@ -287,17 +364,6 @@ class MinionFortressApp(App):
                 minion_btn.remove_class("sidebar-tab-active")
         except Exception:
             pass
-
-    def on_data_table_row_selected(self, event: DataTable.RowSelected) -> None:
-        """Selecting a minion row in the table opens/focuses that minion in the workspace."""
-        if event.row_key and event.row_key.value:
-            selected_id = str(event.row_key.value)
-            minion_panes = list(self.query(MinionPane))
-            if minion_panes:
-                minion_panes[0].set_minion(selected_id)
-                self._update_sidebar_tab_highlight(f"minion-{selected_id}")
-            else:
-                self.run_worker(self._switch_and_update_tab(f"minion-{selected_id}"))
 
     def on_data_table_row_highlighted(self, event: DataTable.RowHighlighted) -> None:
         """Navigating rows automatically previews that minion in Minion Pane if open."""

@@ -132,10 +132,10 @@ class FortressState:
 
     def __init__(self) -> None:
         self.start_time: float = time.time()
-        self.total_tasks: int = 1445
-        self.completed_tasks: int = 1420
-        self.failed_tasks: int = 5
-        self.token_cost: float = 0.042
+        self.total_tasks: int = 0
+        self.completed_tasks: int = 0
+        self.failed_tasks: int = 0
+        self.token_cost: float = 0.0
         self.banana_mode: bool = False
         self.minions: Dict[str, MinionState] = {}
         self.global_logs: RingBuffer[LogEntry] = RingBuffer[LogEntry](maxlen=2000)

@@ -34,7 +34,7 @@ class MinionPane(Vertical):
         self.replay_offset: int = 0
 
     def compose(self) -> ComposeResult:
-        yield Static(f"🍌 MINION-{self.selected_minion_id} [ast-parser]", classes="pane-title", id="minion-pane-title")
+        yield Static(f"🍌 MINION-{self.selected_minion_id}", classes="pane-title", id="minion-pane-title")
         yield Static("", id="minion-ascii-box", classes="minion-avatar-box")
 
         with Horizontal(classes="action-bar", id="time-travel-bar"):
@@ -71,7 +71,7 @@ class MinionPane(Vertical):
         try:
             mode_tag = f" [⏪ REPLAY: -{self.replay_offset}]" if self.is_replay_mode else " [LIVE]"
             title = self.query_one("#minion-pane-title", Static)
-            title.update(f"🍌 MINION-{minion.id} [{minion.name}] ({minion.model}){mode_tag}")
+            title.update(f"🍌 MINION-{minion.id} [{minion.name}]{mode_tag}")
 
             task_display = minion.current_task
             prog_display = minion.progress
