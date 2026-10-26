@@ -1,12 +1,14 @@
 """
 Comprehensive Test Suite for MINION-FORTRESS (KOVAN-X) v3.0.
-Validates State, RingBuffer, EventBus, Plugins, Watchdog Auto-Healing,
+Validates State, RingBuffer, EventBus, Bidirectional IPC Broadcast,
+Plugins, Watchdog Auto-Healing (including IDLE immunity),
 Banana Mode, and Snapshot Exporting.
 """
 
 import asyncio
 import os
 import json
+import time
 import pytest
 from pathlib import Path
 
@@ -77,6 +79,33 @@ async def test_event_bus():
     await bus.stop()
 
 
+@pytest.mark.asyncio
+async def test_ipc_broadcast_to_detached_window():
+    """Validates that EventBus broadcasts events to detached window clients over TCP."""
+    bus = EventBus()
+    test_port = 42025
+    await bus.start(port=test_port)
+
+    # Connect mock detached window client
+    reader, writer = await asyncio.open_connection("127.0.0.1", test_port)
+    await asyncio.sleep(0.05)
+
+    # Publish an event from core daemon
+    test_event = Event(type=EventType.LOG, data={"source": "test-runner", "level": "WARN", "message": "IPC Detached Test"})
+    bus.publish_nowait(test_event)
+
+    # Read line on detached window client
+    line = await asyncio.wait_for(reader.readline(), timeout=2.0)
+    data = json.loads(line.decode("utf-8").strip())
+
+    assert data["type"] == "LOG"
+    assert data["data"]["message"] == "IPC Detached Test"
+
+    writer.close()
+    await writer.wait_closed()
+    await bus.stop()
+
+
 def test_plugin_manager():
     mgr = PluginManager()
     plugins = mgr.get_all()
@@ -100,6 +129,24 @@ def test_plugin_manager():
     new_st2 = mgr.toggle_plugin("Telegram-Bot")
     assert new_st2 is False
     assert telegram.is_active is False
+
+
+@pytest.mark.asyncio
+async def test_plugin_change_event_broadcast():
+    bus = EventBus()
+    plugin_events = []
+    bus.subscribe(EventType.PLUGIN_CHANGE, lambda e: plugin_events.append(e))
+    await bus.start()
+
+    mgr = PluginManager(event_bus=bus)
+    mgr.toggle_plugin("Docling-v2")
+
+    await asyncio.sleep(0.1)
+    assert len(plugin_events) >= 1
+    assert plugin_events[0].data["name"] == "Docling-v2"
+    assert plugin_events[0].data["is_active"] is False
+
+    await bus.stop()
 
 
 @pytest.mark.asyncio
@@ -128,6 +175,32 @@ async def test_watchdog_auto_healing():
     await bus.stop()
 
 
+@pytest.mark.asyncio
+async def test_watchdog_does_not_heal_idle_minions():
+    """Verify that IDLE minions are NOT killed or forced to heal by watchdog timeout."""
+    state = FortressState()
+    bus = EventBus()
+    plugin_mgr = PluginManager()
+    daemon = MinionDaemon(state, bus, plugin_mgr)
+
+    minion2 = state.minions["02"]
+    assert minion2.status == MinionStatus.IDLE
+
+    # Age heartbeat to simulate >5 seconds overdue
+    minion2.last_heartbeat = time.time() - 20.0
+
+    # Run one watchdog inspection iteration
+    now = time.time()
+    for mid, minion in list(state.minions.items()):
+        if minion.status in (MinionStatus.PAUSED, MinionStatus.HEALING, MinionStatus.IDLE):
+            continue
+        if minion.status == MinionStatus.ERROR or (now - minion.last_heartbeat) > 5.0:
+            await daemon._heal_minion(mid, reason="Test overdue")
+
+    # Minion 02 MUST remain IDLE
+    assert minion2.status == MinionStatus.IDLE
+
+
 def test_banana_mode(tmp_path: Path):
     state = FortressState()
     bus = EventBus()
@@ -145,3 +218,50 @@ def test_banana_mode(tmp_path: Path):
     is_banana_off = daemon.toggle_banana_mode()
     assert is_banana_off is False
     assert state.banana_mode is False
+
+
+def test_telegram_plugin_execute():
+    from minion_fortress.plugins.telegram_tool import TelegramPlugin
+    tg = TelegramPlugin()
+    assert tg.is_active is False
+
+    # Execute while paused
+    res_paused = tg.execute({"alert": "Test failure"})
+    assert res_paused["status"] == "skipped"
+
+    # Toggle active and execute
+    tg.toggle()
+    assert tg.is_active is True
+    res_active = tg.execute({"title": "CRITICAL", "alert": "High RAM threshold"})
+    assert res_active["status"] == "sent"
+    assert res_active["title"] == "CRITICAL"
+
+
+def test_plugin_fuzzy_toggle():
+    mgr = PluginManager()
+
+    # Toggle with lowercase partial name
+    assert mgr.get_plugin("Docling-v2").is_active is True
+    res = mgr.toggle_plugin("docling")
+    assert res is False
+    assert mgr.get_plugin("Docling-v2").is_active is False
+
+    # Toggle back
+    res2 = mgr.toggle_plugin("Docling-v2")
+    assert res2 is True
+    assert mgr.get_plugin("Docling-v2").is_active is True
+
+
+def test_history_snapshots_replay():
+    m = MinionState(id="01", name="ast-parser", progress=25, current_task="Task A")
+    m.record_snapshot()
+    m.progress = 50
+    m.current_task = "Task B"
+    m.record_snapshot()
+
+    assert len(m.history_snapshots) == 2
+    snaps = m.history_snapshots.replay(1)
+    assert len(snaps) == 1
+    assert snaps[0]["progress"] == 50
+    assert snaps[0]["current_task"] == "Task B"
+

@@ -32,3 +32,9 @@ class TelegramPlugin:
             "preview": message[:60],
             "timestamp": time.time(),
         }
+
+    def execute(self, payload: Dict[str, Any]) -> Dict[str, Any]:
+        """Uniform plugin execution interface."""
+        title = payload.get("title", "FORTRESS ALERT")
+        message = payload.get("alert") or payload.get("message", "")
+        return self.send_alert(title, message)

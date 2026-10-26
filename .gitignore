@@ -36,6 +36,10 @@ env/
 .coverage
 htmlcov/
 
+# Generated Session Reports & Panic Dumps
+reports/*.json
+reports/*.md
+
 # IDE / Editor configs
 .vscode/
 .idea/

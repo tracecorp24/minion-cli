@@ -38,12 +38,13 @@ class ErrorHealthPane(Vertical):
             self._render_log_entry(entry)
 
     def _handle_error_event(self, event: Event) -> None:
+        import time
         data = event.data
         level = data.get("level", "ERROR").upper()
         source = data.get("source", "system")
         message = data.get("message", "")
         entry = LogEntry(
-            timestamp=event.data.get("timestamp_str", ""),
+            timestamp=event.data.get("timestamp_str") or time.strftime("%H:%M:%S"),
             level=level,
             source=source,
             message=message,

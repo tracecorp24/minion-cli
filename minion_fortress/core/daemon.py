@@ -28,6 +28,7 @@ class MinionDaemon:
         self.state = state
         self.event_bus = event_bus
         self.plugin_manager = plugin_manager
+        self.plugin_manager.set_event_bus(event_bus)
         self.running: bool = False
         self._tasks: List[asyncio.Task] = []
         self._init_minions()
@@ -51,7 +52,7 @@ class MinionDaemon:
                 current_task=task,
                 cpu=12.0 if status == MinionStatus.RUNNING else (45.0 if status == MinionStatus.BUSY else 0.5),
                 memory_mb=round(random.uniform(220.0, 580.0), 1),
-                progress=random.randint(40, 85) if status != MinionStatus.IDLE else 0,
+                progress=random.randint(40, 85) if status not in (MinionStatus.IDLE, MinionStatus.PAUSED) else 0,
             )
             entry = minion.add_log("INFO", f"Minion worker initialized [PID: {os.getpid()}]")
             self.state.minions[mid] = minion
@@ -72,7 +73,7 @@ class MinionDaemon:
             t.cancel()
 
     async def _worker_loop(self) -> None:
-        """Simulates realistic asynchronous minion work pipelines."""
+        """Simulates realistic asynchronous minion work pipelines and integrates external tools."""
         task_cycles = {
             "01": [
                 "AST Nodes mapped: 142",
@@ -133,10 +134,28 @@ class MinionDaemon:
                 else:
                     minion.cpu = round(random.uniform(8.0, 28.0), 1)
 
+                # Plugin Integration: Check active tools
+                extra_note = ""
+                if mid == "04":
+                    docling = self.plugin_manager.get_plugin("Docling-v2")
+                    pgvector = self.plugin_manager.get_plugin("pgvector-sync")
+                    if docling and not getattr(docling, "is_active", True):
+                        extra_note = " [Docling-v2 PAUSED]"
+                    elif docling:
+                        docling.execute({"task": "parse"})
+                        if pgvector and getattr(pgvector, "is_active", True):
+                            pgvector.execute({"batch": 10})
+                elif mid == "01":
+                    router = self.plugin_manager.get_plugin("OpenRouter-API")
+                    if router and not getattr(router, "is_active", True):
+                        extra_note = " [OpenRouter PAUSED]"
+                    elif router:
+                        router.execute({"model": minion.model})
+
                 # Update task text
                 choices = task_cycles.get(mid, ["Processing task stream"])
                 new_task = random.choice(choices)
-                minion.current_task = f"{new_task} [{minion.progress}%]"
+                minion.current_task = f"{new_task}{extra_note} [{minion.progress}%]"
                 minion.record_snapshot()
 
                 # Log entry
@@ -144,6 +163,7 @@ class MinionDaemon:
                 self.state.add_global_log("INFO", f"minion-{mid}", minion.current_task)
 
                 # Publish event
+                ts_now = time.strftime("%H:%M:%S")
                 self.event_bus.publish_nowait(
                     Event(
                         type=EventType.LOG,
@@ -154,6 +174,7 @@ class MinionDaemon:
                             "minion_id": mid,
                             "progress": minion.progress,
                             "cpu": minion.cpu,
+                            "timestamp_str": ts_now,
                         },
                     )
                 )
@@ -179,8 +200,8 @@ class MinionDaemon:
         """
         Feature 8: Auto-Healing Shield & Watchdog.
         Monitors minion heartbeats. If a minion has not pulsed within 5 seconds
-        or is stuck in ERROR state, triggers auto-healing:
-        terminates faulty state and respawns cleanly.
+        or is stuck in ERROR state, triggers auto-healing.
+        IMPORTANT: Excludes IDLE and PAUSED minions from timeout checks!
         """
         while self.running:
             await asyncio.sleep(1.0)
@@ -189,12 +210,17 @@ class MinionDaemon:
 
             now = time.time()
             for mid, minion in list(self.state.minions.items()):
-                # Check for frozen heartbeat or ERROR state
-                overdue = (now - minion.last_heartbeat) > 5.0
-                is_error = minion.status == MinionStatus.ERROR
+                # Exclude deliberately paused, healing, or idle minions
+                if minion.status in (MinionStatus.PAUSED, MinionStatus.HEALING, MinionStatus.IDLE):
+                    continue
 
-                if (overdue or is_error) and minion.status not in (MinionStatus.PAUSED, MinionStatus.HEALING):
-                    await self._heal_minion(mid, reason="Heartbeat timeout (>5s)" if overdue else "Fatal error trigger")
+                is_error = minion.status == MinionStatus.ERROR
+                overdue = (now - minion.last_heartbeat) > 5.0
+
+                if is_error:
+                    await self._heal_minion(mid, reason="Fatal error trigger")
+                elif overdue:
+                    await self._heal_minion(mid, reason="Heartbeat timeout (>5s)")
 
     async def _heal_minion(self, minion_id: str, reason: str, delay: float = 1.5) -> None:
         """Executes auto-healing sequence for a minion."""
@@ -208,7 +234,13 @@ class MinionDaemon:
         self.event_bus.publish_nowait(
             Event(
                 type=EventType.ERROR,
-                data={"source": "watchdog", "level": "HEAL", "message": heal_msg, "minion_id": minion_id},
+                data={
+                    "source": "watchdog",
+                    "level": "HEAL",
+                    "message": heal_msg,
+                    "minion_id": minion_id,
+                    "timestamp_str": time.strftime("%H:%M:%S"),
+                },
             )
         )
 
@@ -229,7 +261,13 @@ class MinionDaemon:
         self.event_bus.publish_nowait(
             Event(
                 type=EventType.LOG,
-                data={"source": "watchdog", "level": "HEAL", "message": recovered_msg, "minion_id": minion_id},
+                data={
+                    "source": "watchdog",
+                    "level": "HEAL",
+                    "message": recovered_msg,
+                    "minion_id": minion_id,
+                    "timestamp_str": time.strftime("%H:%M:%S"),
+                },
             )
         )
 
@@ -257,15 +295,21 @@ class MinionDaemon:
             self.event_bus.publish_nowait(
                 Event(
                     type=EventType.ERROR if level == "ERROR" else EventType.LOG,
-                    data={"source": src, "level": level, "message": msg},
+                    data={"source": src, "level": level, "message": msg, "timestamp_str": time.strftime("%H:%M:%S")},
                 )
             )
+
+            # If error and Telegram plugin is active, notify via Telegram
+            if level == "ERROR":
+                tg = self.plugin_manager.get_plugin("Telegram-Bot")
+                if tg and getattr(tg, "is_active", False):
+                    tg.execute({"alert": msg})
 
     # REPL and UI Control methods
     def toggle_banana_mode(self) -> bool:
         """
         Extra Feature: Banana Mode (Emergency Panic Button).
-        Freezes processing, flushes current state to disk, and triggers warning banner.
+        Freezes processing, flushes complete state to disk, and triggers warning banner.
         """
         self.state.banana_mode = not self.state.banana_mode
         if self.state.banana_mode:
@@ -273,10 +317,37 @@ class MinionDaemon:
             panic_dir.mkdir(parents=True, exist_ok=True)
             ts = time.strftime("%Y%m%d_%H%M%S")
             panic_file = panic_dir / f"banana_panic_lockdown_{ts}.json"
-            with open(panic_file, "w", encoding="utf-8") as pf:
-                json.dump({"banana_mode": True, "timestamp": time.time(), "status": "LOCKED"}, pf, indent=2)
 
-            msg = "🍌 BANANA MODE ACTIVATED! Cluster frozen in emergency lockdown. State persisted."
+            # Full snapshot serialization
+            minions_summary = {
+                mid: {
+                    "name": m.name,
+                    "status": m.status.value,
+                    "model": m.model,
+                    "progress": m.progress,
+                    "current_task": m.current_task,
+                    "error_count": m.error_count,
+                    "recent_logs": [e.message for e in m.logs.get_recent(10)],
+                }
+                for mid, m in self.state.minions.items()
+            }
+            dump_data = {
+                "banana_mode": True,
+                "timestamp": time.time(),
+                "timestamp_str": ts,
+                "status": "EMERGENCY_LOCKDOWN",
+                "telemetry": {
+                    "tasks_completed": self.state.completed_tasks,
+                    "token_cost": self.state.token_cost,
+                    "active_minions": self.state.get_active_minion_count(),
+                },
+                "minions": minions_summary,
+                "last_errors": [e.message for e in self.state.error_logs.get_recent(15)],
+            }
+            with open(panic_file, "w", encoding="utf-8") as pf:
+                json.dump(dump_data, pf, indent=2, ensure_ascii=False)
+
+            msg = "🍌 BANANA MODE ACTIVATED! Cluster frozen in emergency lockdown. Complete state persisted."
             self.state.add_global_log("BANANA", "fortress", msg)
             self.event_bus.publish_nowait(Event(type=EventType.BANANA_MODE, data={"active": True, "message": msg}))
         else:
@@ -317,7 +388,13 @@ class MinionDaemon:
             self.event_bus.publish_nowait(
                 Event(
                     type=EventType.ERROR,
-                    data={"source": f"minion-{minion_id}", "level": "FATAL", "message": err_msg, "minion_id": minion_id},
+                    data={
+                        "source": f"minion-{minion_id}",
+                        "level": "FATAL",
+                        "message": err_msg,
+                        "minion_id": minion_id,
+                        "timestamp_str": time.strftime("%H:%M:%S"),
+                    },
                 )
             )
             return True

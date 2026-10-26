@@ -1,10 +1,11 @@
 """
 Feature 6 & Minion View: Live Minion Pane and Time Travel Replay.
 Displays ASCII Minion avatar, progress bar, telemetry, and allows rewinding
-up to 50 historical steps using ring buffer snapshots.
+up to 50 historical steps using ring buffer snapshots with zero-lag smooth appending.
 """
 
 from __future__ import annotations
+import time
 from textual.app import ComposeResult
 from textual.widgets import Static, Button, RichLog
 from textual.containers import Vertical, Horizontal
@@ -49,7 +50,8 @@ class MinionPane(Vertical):
     def on_mount(self) -> None:
         self.event_bus.subscribe(EventType.LOG, self._on_log)
         self.event_bus.subscribe(EventType.STATUS_CHANGE, self._on_status_change)
-        self.refresh_minion_display()
+        self._update_header_and_avatar()
+        self._render_full_history()
 
     def set_minion(self, minion_id: str) -> None:
         """Switches active minion focus."""
@@ -57,42 +59,71 @@ class MinionPane(Vertical):
             self.selected_minion_id = minion_id
             self.is_replay_mode = False
             self.replay_offset = 0
-            self.refresh_minion_display()
+            self._update_header_and_avatar()
+            self._render_full_history()
 
-    def refresh_minion_display(self) -> None:
-        """Updates the avatar, progress bar, and log view for the selected minion."""
+    def _update_header_and_avatar(self) -> None:
+        """Updates the avatar and status header without touching the log stream widget."""
         minion = self.state.minions.get(self.selected_minion_id)
         if not minion:
             return
 
-        # Update title
-        mode_tag = f" [⏪ REPLAY: -{self.replay_offset}]" if self.is_replay_mode else " [LIVE]"
-        title = self.query_one("#minion-pane-title", Static)
-        title.update(f"🍌 MINION-{minion.id} [{minion.name}] ({minion.model}){mode_tag}")
+        try:
+            mode_tag = f" [⏪ REPLAY: -{self.replay_offset}]" if self.is_replay_mode else " [LIVE]"
+            title = self.query_one("#minion-pane-title", Static)
+            title.update(f"🍌 MINION-{minion.id} [{minion.name}] ({minion.model}){mode_tag}")
 
-        # Update ASCII Art box
-        pbar = render_progress_bar(minion.progress, width=12)
-        avatar_text = (
-            f"  (o) > {minion.current_task}\n"
-            f" |█| > [PROGRESS] [{pbar}] {minion.progress}%\n"
-            f"  / \\ > Status: {minion.status.value} │ CPU: {minion.cpu}% │ RAM: {minion.memory_mb}MB"
-        )
-        ascii_box = self.query_one("#minion-ascii-box", Static)
-        ascii_box.update(avatar_text)
+            task_display = minion.current_task
+            prog_display = minion.progress
+            status_display = minion.status.value
+            cpu_display = minion.cpu
 
-        # Refresh logs
-        log_view = self.query_one("#minion-log-stream", RichLog)
-        log_view.clear()
+            if self.is_replay_mode and len(minion.history_snapshots) > 0:
+                snaps = minion.history_snapshots.replay(self.replay_offset)
+                if snaps:
+                    target_snap = snaps[0]
+                    task_display = f"[REWOUND: {target_snap.get('timestamp', '')}] {target_snap.get('current_task', '')}"
+                    prog_display = target_snap.get("progress", minion.progress)
+                    status_display = target_snap.get("status", minion.status.value)
+                    cpu_display = target_snap.get("cpu", minion.cpu)
 
-        if self.is_replay_mode:
-            replay_entries = minion.logs.replay(self.replay_offset)
-            log_view.write(f"[bold yellow]=== ⏪ TIME TRAVEL PLAYBACK: LAST {len(replay_entries)} STEPS ===[/bold yellow]")
-            for entry in replay_entries:
-                log_view.write(f"[{entry.timestamp}] [{entry.level}] {entry.message}")
-        else:
-            recent_entries = minion.logs.get_recent(40)
-            for entry in recent_entries:
-                log_view.write(f"[{entry.timestamp}] [{entry.level}] {entry.message}")
+            pbar = render_progress_bar(prog_display, width=12)
+            avatar_text = (
+                f"  (o) > {task_display}\n"
+                f" |█| > [PROGRESS] [{pbar}] {prog_display}%\n"
+                f"  / \\ > Status: {status_display} │ CPU: {cpu_display}% │ RAM: {minion.memory_mb}MB"
+            )
+            ascii_box = self.query_one("#minion-ascii-box", Static)
+            ascii_box.update(avatar_text)
+        except Exception:
+            pass
+
+    def _render_full_history(self) -> None:
+        """Fully clears and re-renders log history (used only for initial mount, minion switch, or replay)."""
+        minion = self.state.minions.get(self.selected_minion_id)
+        if not minion:
+            return
+
+        try:
+            log_view = self.query_one("#minion-log-stream", RichLog)
+            log_view.clear()
+
+            if self.is_replay_mode:
+                replay_entries = minion.logs.replay(self.replay_offset)
+                log_view.write(f"[bold yellow]=== ⏪ TIME TRAVEL PLAYBACK: LAST {len(replay_entries)} STEPS ===[/bold yellow]")
+                for entry in replay_entries:
+                    log_view.write(f"[{entry.timestamp}] [{entry.level}] {entry.message}")
+            else:
+                recent_entries = minion.logs.get_recent(40)
+                for entry in recent_entries:
+                    log_view.write(f"[{entry.timestamp}] [{entry.level}] {entry.message}")
+        except Exception:
+            pass
+
+    def refresh_minion_display(self) -> None:
+        """Refreshes header, avatar, and full history if in replay mode."""
+        self._update_header_and_avatar()
+        self._render_full_history()
 
     @on(Button.Pressed)
     def on_button_pressed(self, event: Button.Pressed) -> None:
@@ -129,17 +160,32 @@ class MinionPane(Vertical):
             self.refresh_minion_display()
 
     def _update_button_styles(self) -> None:
-        live_btn = self.query_one("#btn-live", Button)
-        if self.is_replay_mode:
-            live_btn.classes = ""
-        else:
-            live_btn.classes = "active-btn"
+        try:
+            live_btn = self.query_one("#btn-live", Button)
+            if self.is_replay_mode:
+                live_btn.classes = ""
+            else:
+                live_btn.classes = "active-btn"
+        except Exception:
+            pass
 
     def _on_log(self, event: Event) -> None:
         data = event.data
         if data.get("minion_id") == self.selected_minion_id:
             if not self.is_replay_mode:
-                self.app.call_from_thread(self.refresh_minion_display)
+                msg = data.get("message", "")
+                lvl = data.get("level", "INFO")
+                ts = time.strftime("%H:%M:%S")
+
+                def append_log():
+                    try:
+                        self._update_header_and_avatar()
+                        log_view = self.query_one("#minion-log-stream", RichLog)
+                        log_view.write(f"[{ts}] [{lvl}] {msg}")
+                    except Exception:
+                        pass
+
+                self.app.call_from_thread(append_log)
 
     def _on_status_change(self, event: Event) -> None:
-        self.app.call_from_thread(self.refresh_minion_display)
+        self.app.call_from_thread(self._update_header_and_avatar)

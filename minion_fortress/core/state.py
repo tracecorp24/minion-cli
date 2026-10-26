@@ -155,7 +155,7 @@ class FortressState:
         now_str = time.strftime("%H:%M:%S")
         entry = LogEntry(timestamp=now_str, level=level, source=source, message=message)
         self.global_logs.append(entry)
-        if level.upper() in ("ERROR", "FATAL", "WARN", "HEAL"):
+        if level.upper() in ("ERROR", "FATAL", "WARN", "HEAL", "BANANA"):
             self.error_logs.append(entry)
         return entry
 

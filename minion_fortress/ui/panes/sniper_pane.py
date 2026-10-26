@@ -46,9 +46,10 @@ class LogSniperPane(Vertical):
 
     def _handle_new_log(self, event: Event) -> None:
         """Processes incoming real-time logs against active regex pattern."""
+        import time
         data = event.data
         entry = LogEntry(
-            timestamp=data.get("timestamp_str", ""),
+            timestamp=data.get("timestamp_str") or time.strftime("%H:%M:%S"),
             level=data.get("level", "INFO"),
             source=data.get("source", "system"),
             message=data.get("message", ""),

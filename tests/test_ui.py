@@ -1,7 +1,7 @@
 """
 Textual UI Pilot Test for Minion Fortress v3.0.
 Simulates App lifecycle, REPL commands, Banana Mode (F12), Export (F8),
-and Time Travel interactions.
+Time Travel interactions, and Detached Monitor Window lifecycle.
 """
 
 import pytest
@@ -10,6 +10,7 @@ from minion_fortress.core.event_bus import EventBus
 from minion_fortress.core.daemon import MinionDaemon
 from minion_fortress.plugins.manager import PluginManager
 from minion_fortress.ui.app import MinionFortressApp
+from minion_fortress.ui.detached_window import DetachedMonitorApp
 from minion_fortress.ui.panes.minion_pane import MinionPane
 from minion_fortress.ui.panes.error_pane import ErrorHealthPane
 from minion_fortress.ui.panes.sniper_pane import LogSniperPane
@@ -24,7 +25,13 @@ async def test_ui_lifecycle_and_panes():
     plugin_mgr = PluginManager()
     daemon = MinionDaemon(state, bus, plugin_mgr)
 
-    app = MinionFortressApp(state=state, event_bus=bus, daemon=daemon, plugin_manager=plugin_mgr)
+    app = MinionFortressApp(
+        state=state,
+        event_bus=bus,
+        daemon=daemon,
+        plugin_manager=plugin_mgr,
+        auto_spawn_detached=False,
+    )
 
     async with app.run_test() as pilot:
         await pilot.pause(0.2)
@@ -86,3 +93,15 @@ async def test_ui_lifecycle_and_panes():
 
         # Clean shutdown
         await app.action_quit()
+
+
+@pytest.mark.asyncio
+async def test_detached_monitor_app():
+    """Verify DetachedMonitorApp mounts properly and responds to events."""
+    monitor = DetachedMonitorApp(port=42099)
+    async with monitor.run_test() as pilot:
+        await pilot.pause(0.1)
+        assert monitor.query_one("#detached-banner") is not None
+        assert monitor.query_one("#error-stream") is not None
+        assert monitor.query_one("#activity-stream") is not None
+        monitor.exit()

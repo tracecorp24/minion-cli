@@ -6,6 +6,7 @@ logs, heartbeats, and status changes seamlessly.
 
 from __future__ import annotations
 import asyncio
+import inspect
 import json
 import logging
 import os
@@ -37,7 +38,7 @@ class Event:
 
 
 class EventBus:
-    """Zero-lag async Pub/Sub event bus with IPC socket capability."""
+    """Zero-lag async Pub/Sub event bus with bidirectional IPC socket capability."""
 
     def __init__(self) -> None:
         self._subscribers: Dict[EventType, Set[Callable[[Event], Any]]] = {et: set() for et in EventType}
@@ -45,6 +46,7 @@ class EventBus:
         self._running: bool = False
         self._worker_task: asyncio.Task | None = None
         self._ipc_server: asyncio.Server | None = None
+        self._ipc_clients: Set[asyncio.StreamWriter] = set()
 
     def subscribe(self, event_type: EventType, handler: Callable[[Event], Any]) -> None:
         """Subscribe a sync or async callback to an event type."""
@@ -94,13 +96,20 @@ class EventBus:
         # 2. Loopback TCP IPC Server (Windows & network fallback)
         try:
             self._ipc_server = await asyncio.start_server(self._handle_ipc_client, host, port)
-        except Exception:
+        except Exception as e:
+            logger.warning(f"Failed to start TCP IPC server on {host}:{port}: {e}")
             self._ipc_server = None
 
     async def stop(self) -> None:
         self._running = False
         if self._worker_task:
             self._worker_task.cancel()
+        for client in list(self._ipc_clients):
+            try:
+                client.close()
+            except Exception:
+                pass
+        self._ipc_clients.clear()
         if self._ipc_server:
             self._ipc_server.close()
             await self._ipc_server.wait_closed()
@@ -112,12 +121,33 @@ class EventBus:
                 handlers = self._subscribers.get(event.type, set())
                 for handler in list(handlers):
                     try:
-                        if asyncio.iscoroutinefunction(handler):
+                        if inspect.iscoroutinefunction(handler):
                             asyncio.create_task(handler(event))
                         else:
                             handler(event)
                     except Exception as ex:
                         logger.error(f"Error executing event handler {handler}: {ex}")
+
+                # Broadcast to external detached window nodes via IPC sockets
+                if self._ipc_clients:
+                    payload = json.dumps(
+                        {
+                            "type": event.type.value if hasattr(event.type, "value") else str(event.type),
+                            "data": event.data,
+                            "timestamp": event.timestamp,
+                        }
+                    ).encode("utf-8") + b"\n"
+
+                    async def _broadcast_to_client(w: asyncio.StreamWriter, p: bytes) -> None:
+                        try:
+                            w.write(p)
+                            await asyncio.wait_for(w.drain(), timeout=0.25)
+                        except Exception:
+                            self._ipc_clients.discard(w)
+
+                    for client in list(self._ipc_clients):
+                        asyncio.create_task(_broadcast_to_client(client, payload))
+
                 self._queue.task_done()
             except asyncio.CancelledError:
                 break
@@ -125,7 +155,8 @@ class EventBus:
                 logger.error(f"Event bus loop error: {e}")
 
     async def _handle_ipc_client(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
-        """Handles external IPC messages sent by external processes."""
+        """Handles external IPC connections, reads inbound commands, and keeps stream open for broadcasts."""
+        self._ipc_clients.add(writer)
         try:
             while self._running:
                 line = await reader.readline()
@@ -139,5 +170,9 @@ class EventBus:
                 except Exception:
                     pass
         finally:
-            writer.close()
-            await writer.wait_closed()
+            self._ipc_clients.discard(writer)
+            try:
+                writer.close()
+                await writer.wait_closed()
+            except Exception:
+                pass

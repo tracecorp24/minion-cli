@@ -22,6 +22,7 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--daemon", action="store_true", help="Run background daemon without TUI")
     parser.add_argument("--export", action="store_true", help="Generate instantaneous system snapshot report and exit")
+    parser.add_argument("--no-detached", action="store_true", help="Do not automatically open the detached monitor window")
     parser.add_argument("--version", action="version", version="Minion Fortress v3.0.0")
     return parser.parse_args()
 
@@ -31,7 +32,7 @@ def run_app() -> None:
 
     state = FortressState()
     event_bus = EventBus()
-    plugin_mgr = PluginManager()
+    plugin_mgr = PluginManager(event_bus=event_bus)
     state.plugins = plugin_mgr.get_all()
     daemon = MinionDaemon(state, event_bus, plugin_mgr)
 
@@ -45,6 +46,7 @@ def run_app() -> None:
 
     if args.daemon:
         print("Starting Minion Fortress Daemon in headless mode (Press Ctrl+C to stop)...")
+        print("Detached monitor windows can connect to 127.0.0.1:42010.")
 
         async def run_daemon_headless():
             await event_bus.start()
@@ -63,7 +65,13 @@ def run_app() -> None:
         sys.exit(0)
 
     # Interactive TUI Mode
-    app = MinionFortressApp(state=state, event_bus=event_bus, daemon=daemon, plugin_manager=plugin_mgr)
+    app = MinionFortressApp(
+        state=state,
+        event_bus=event_bus,
+        daemon=daemon,
+        plugin_manager=plugin_mgr,
+        auto_spawn_detached=not args.no_detached,
+    )
     app.run()
 
 
