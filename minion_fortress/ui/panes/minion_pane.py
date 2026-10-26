@@ -38,12 +38,12 @@ class MinionPane(Vertical):
         yield Static("", id="minion-ascii-box", classes="minion-avatar-box")
 
         with Horizontal(classes="action-bar", id="time-travel-bar"):
-            yield Static("⏪ Time Travel: ", id="tt-label")
-            yield Button("◀ -1", id="btn-replay-prev")
-            yield Button("+1 ▶", id="btn-replay-next")
-            yield Button("-10", id="btn-replay-10")
-            yield Button("Replay 50", id="btn-replay-50")
-            yield Button("🔴 Live Stream", id="btn-live", classes="active-btn")
+            yield Static("⏪ Replay:", id="tt-label")
+            yield Button("-1", id="btn-replay-prev", tooltip="1 Adım Geri")
+            yield Button("+1", id="btn-replay-next", tooltip="1 Adım İleri")
+            yield Button("-10", id="btn-replay-10", tooltip="10 Adım Geri")
+            yield Button("50", id="btn-replay-50", tooltip="50 Adım Geri")
+            yield Button("🔴 Canlı", id="btn-live", classes="active-btn", tooltip="Canlı Akış")
 
         yield RichLog(id="minion-log-stream", classes="log-stream", highlight=True, markup=True, wrap=True, min_width=0)
 

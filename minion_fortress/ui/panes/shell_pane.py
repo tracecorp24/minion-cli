@@ -59,9 +59,9 @@ class InteractiveShellPane(Vertical):
         title = "🤖 ANTIGRAVITY AGENT CLI" if self.agy_mode else "💻 GERÇEK GÖMÜLÜ TERMİNAL (ConPTY)"
         with Horizontal(classes="action-bar shell-action-bar"):
             yield Static(f"{title}", classes="shell-status-label", id="shell-title-static")
-            yield Button("🖥️ Terminal", id="btn-mode-terminal", classes="shell-hdr-btn active-btn", tooltip="Gerçek Gömülü ConPTY Konsolu")
-            yield Button("🤖 Agent Akışı", id="btn-mode-stream", classes="shell-hdr-btn", tooltip="Canlı Agent Ara Adım Akışı")
-            yield Button("🪟 Harici Konsol", id="btn-open-terminal", classes="shell-hdr-btn", tooltip="Yeni Windows Konsolunda Aç")
+            yield Button("🖥️ Term", id="btn-mode-terminal", classes="shell-hdr-btn active-btn", tooltip="Gerçek Gömülü ConPTY Konsolu")
+            yield Button("🤖 Akış", id="btn-mode-stream", classes="shell-hdr-btn", tooltip="Canlı Agent Ara Adım Akışı")
+            yield Button("🪟 Harici", id="btn-open-terminal", classes="shell-hdr-btn", tooltip="Yeni Windows Konsolunda Aç")
 
         with Vertical(id="shell-view-container"):
             if self._current_terminal is None:
@@ -401,7 +401,17 @@ class InteractiveShellPane(Vertical):
 
     async def _process_agy_stream(self, proc: asyncio.subprocess.Process, prompt_text: str) -> None:
         """Parses and renders live stream-json events from agy."""
+        response_buffer = ""
+
+        def flush_buffer():
+            nonlocal response_buffer
+            if response_buffer:
+                buf = response_buffer
+                response_buffer = ""
+                self.app.call_later(self._write_log, Text.from_ansi(buf))
+
         async def read_stdout():
+            nonlocal response_buffer
             while True:
                 line = await proc.stdout.readline()
                 if not line:
@@ -413,11 +423,13 @@ class InteractiveShellPane(Vertical):
                 try:
                     data = json.loads(raw_text)
                 except Exception:
+                    flush_buffer()
                     self.app.call_later(self._write_log, Text.from_ansi(raw_text))
                     continue
 
                 ev = data.get("event")
                 if ev == "init":
+                    flush_buffer()
                     init_data = data.get("init", {})
                     tools_count = len(init_data.get("tools", []))
                     self.app.call_later(
@@ -434,6 +446,7 @@ class InteractiveShellPane(Vertical):
                     text_delta = su.get("text_delta")
 
                     if st == "tool":
+                        flush_buffer()
                         if state == "ACTIVE":
                             params = tool_info.get("parameters", {})
                             summary_parts = []
@@ -464,11 +477,16 @@ class InteractiveShellPane(Vertical):
 
                     elif st == "agent_response":
                         if text_delta:
-                            clean_delta = str(text_delta).rstrip("\r\n")
-                            if clean_delta:
-                                self.app.call_later(self._write_log, Text.from_ansi(clean_delta))
+                            # Accumulate tokens and flush completed lines on newline so words aren't split
+                            response_buffer += str(text_delta)
+                            if "\n" in response_buffer:
+                                parts = response_buffer.split("\n")
+                                for completed in parts[:-1]:
+                                    self.app.call_later(self._write_log, Text.from_ansi(completed))
+                                response_buffer = parts[-1]
 
                 elif ev == "result":
+                    flush_buffer()
                     res = data.get("result", {})
                     dur = res.get("duration_seconds", 0)
                     usage = res.get("usage", {})
@@ -479,6 +497,8 @@ class InteractiveShellPane(Vertical):
                         self._write_log,
                         f"[bold {color}]✔ Antigravity görevi tamamlandı[/bold {color}] [dim]({dur:.1f}s • {tokens} token)[/dim]\n"
                     )
+
+            flush_buffer()
 
         async def read_stderr():
             while True:

@@ -122,6 +122,7 @@ class MinionFortressApp(App):
                     yield Button("🚨 Watchdog Hata & Sağlık", id="tab-btn-error", classes="sidebar-tab-btn")
                     yield Button("🎯 Live Log Sniper", id="tab-btn-sniper", classes="sidebar-tab-btn")
                     yield Button("🧩 Eklenti & Araç Mağazası", id="tab-btn-plugins", classes="sidebar-tab-btn")
+                    yield Button("🗖 Tümünü Sığdır (Grid)", id="tab-btn-fit-all", classes="sidebar-tab-btn", tooltip="Tüm Pencereleri Ekrana Otomatik Sığdır (Satır/Sütun)")
 
                 yield Static("🤖 MINION ROSTER (Tıkla & Aç)", classes="section-header")
                 yield DataTable(id="minion-roster-table")
@@ -230,6 +231,12 @@ class MinionFortressApp(App):
     def on_button_pressed(self, event: Button.Pressed) -> None:
         """Handles sidebar tab buttons to open/switch CLI panes."""
         btn_id = event.button.id or ""
+        if btn_id == "tab-btn-fit-all":
+            self._update_sidebar_tab_highlight("fit_all")
+            ws = self.query_one(DynamicWorkspace)
+            self.run_worker(ws.apply_preset("fit_all"))
+            return
+
         tab_targets = {
             "tab-btn-minion": "minion-01",
             "tab-btn-shell": "shell",
@@ -259,6 +266,7 @@ class MinionFortressApp(App):
             "error": "tab-btn-error",
             "sniper": "tab-btn-sniper",
             "plugins": "tab-btn-plugins",
+            "fit_all": "tab-btn-fit-all",
         }
         for cli, btn_id in tab_buttons.items():
             try:
@@ -328,11 +336,17 @@ class MinionFortressApp(App):
 
     def action_cycle_layout(self) -> None:
         """F2: Cycles through layout presets."""
-        presets = ["grid_2x2", "main_stack", "split_v", "split_h", "three_cols", "single"]
+        presets = ["grid_2x2", "main_stack", "split_v", "split_h", "three_cols", "fit_all", "single"]
         ws = self.query_one(DynamicWorkspace)
         curr = ws.current_preset
         next_idx = (presets.index(curr) + 1) % len(presets) if curr in presets else 0
         self.run_worker(ws.apply_preset(presets[next_idx]))
+
+    def action_fit_all_layout(self) -> None:
+        """F9: Fits all active panes into the layout automatically."""
+        self._update_sidebar_tab_highlight("fit_all")
+        ws = self.query_one(DynamicWorkspace)
+        self.run_worker(ws.apply_preset("fit_all"))
 
     def action_split_vertical(self) -> None:
         """F3: Splits active tile vertically."""

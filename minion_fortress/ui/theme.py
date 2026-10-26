@@ -216,9 +216,9 @@ RichLog {{
 
 .shell-hdr-btn {{
     width: auto;
-    min-width: 18;
+    min-width: 8;
     height: 1;
-    margin: 0;
+    margin: 0 0 0 1;
     padding: 0 1;
     background: #252525;
     color: #00FF7F;

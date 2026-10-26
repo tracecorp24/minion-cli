@@ -702,3 +702,70 @@ async def test_split_tile_preserves_process_and_terminal_resizes_dynamically():
 
 
 
+
+
+@pytest.mark.asyncio
+async def test_fit_all_layout_button_and_grid_distribution():
+    """Verify that 'Tümünü Sığdır' button fits all active windows into optimal rows and columns."""
+    state = FortressState()
+    bus = EventBus()
+
+    app = MinionFortressApp(
+        state=state,
+        event_bus=bus,
+        auto_spawn_detached=False,
+        initial_preset="single",
+    )
+
+    async with app.run_test(size=(120, 40)) as pilot:
+        await pilot.pause(0.2)
+        ws = app.query_one(DynamicWorkspace)
+        assert ws.current_preset == "single"
+        assert len(ws._active_tiles) == 1
+
+        # 1. Click '🗖 Tümünü Sığdır' button in the preset toolbar
+        btn_fit_preset = ws.query_one("#preset-fit-all", Button)
+        assert btn_fit_preset is not None
+        btn_fit_preset.press()
+        await pilot.pause(0.25)
+
+        assert ws.current_preset == "fit_all"
+        # Fits all 5 core panes (minion-01, shell, error, sniper, plugins)
+        assert len(ws._active_tiles) == 5
+        active_types = [t.cli_type for t in ws._active_tiles.values()]
+        assert "minion-01" in active_types
+        assert "shell" in active_types
+        assert "error" in active_types
+        assert "sniper" in active_types
+        assert "plugins" in active_types
+
+        # Verify splitters are mounted between columns and rows
+        from minion_fortress.ui.drag_splitter import DragSplitter
+        splitters = list(ws.query(DragSplitter))
+        assert len(splitters) >= 4  # 1 vertical row splitter + horizontal col splitters
+
+        # 2. Switch back to single, then test sidebar button '🗖 Tümünü Sığdır (Grid)'
+        btn_single = ws.query_one("#preset-single", Button)
+        btn_single.press()
+        await pilot.pause(0.2)
+        assert len(ws._active_tiles) == 1
+
+        btn_fit_sidebar = app.query_one("#tab-btn-fit-all", Button)
+        assert btn_fit_sidebar is not None
+        btn_fit_sidebar.press()
+        await pilot.pause(0.25)
+        assert ws.current_preset == "fit_all"
+        assert len(ws._active_tiles) == 5
+        assert "sidebar-tab-active" in btn_fit_sidebar.classes
+
+        # 3. Test F9 hotkey trigger
+        btn_single.press()
+        await pilot.pause(0.2)
+        assert len(ws._active_tiles) == 1
+
+        await pilot.press("f9")
+        await pilot.pause(0.25)
+        assert ws.current_preset == "fit_all"
+        assert len(ws._active_tiles) == 5
+
+        await app.action_quit()
