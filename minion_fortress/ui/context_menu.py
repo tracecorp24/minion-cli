@@ -147,9 +147,6 @@ class CliSelectorModal(ModalScreen[Optional[str]]):
         ("minion-03", "🤖 Minion-03 (quant • deepseek-r1)"),
         ("minion-04", "🤖 Minion-04 (doc-ext • qwen-2.5-coder)"),
         ("minion-05", "🤖 Minion-05 (code-synth • qwen-2.5-coder)"),
-        ("error", "🚨 Watchdog Hata & Otomatik İyileştirme Monitörü"),
-        ("sniper", "🎯 Log Sniper (Canlı Regex Filtreleme)"),
-        ("plugins", "🧩 Eklenti & Araç Mağazası (Plugin Hub)"),
     ]
 
     def __init__(self, tile_id: str, current_cli: str) -> None:

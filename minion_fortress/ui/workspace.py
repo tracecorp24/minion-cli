@@ -213,16 +213,16 @@ class DynamicWorkspace(Vertical):
 
         elif preset_name == "split_h":
             t1 = self._create_tile("minion-01")
-            t2 = self._create_tile("error")
+            t2 = self._create_tile("minion-02")
             splitter = DragSplitter(direction="vertical")
             container = Vertical(t1, splitter, t2, classes="split-row")
             await canvas.mount(container)
 
         elif preset_name == "grid_2x2":
             t1 = self._create_tile("minion-01")
-            t2 = self._create_tile("error")
-            t3 = self._create_tile("sniper")
-            t4 = self._create_tile("plugins")
+            t2 = self._create_tile("minion-02")
+            t3 = self._create_tile("minion-03")
+            t4 = self._create_tile("shell")
 
             h_split1 = DragSplitter(direction="horizontal")
             h_split2 = DragSplitter(direction="horizontal")
@@ -237,7 +237,7 @@ class DynamicWorkspace(Vertical):
             t1 = self._create_tile("minion-01")
             h_splitter = DragSplitter(direction="horizontal")
 
-            t2 = self._create_tile("error")
+            t2 = self._create_tile("minion-02")
             v_splitter = DragSplitter(direction="vertical")
             t3 = self._create_tile("shell")
 
@@ -256,15 +256,13 @@ class DynamicWorkspace(Vertical):
             await canvas.mount(container)
 
         elif preset_name == "fit_all":
-            # If explicit target_tiles provided, use them;
-            # If multiple tiles were already open, arrange all of them;
-            # If only 1 tile was open, fit all 5 core tab types!
+            # Fits active agent windows into optimal row/col grid
             if target_tiles:
                 types_to_fit = target_tiles
             elif len(existing_types) > 1:
                 types_to_fit = existing_types
             else:
-                types_to_fit = ["minion-01", "shell", "error", "sniper", "plugins"]
+                types_to_fit = ["minion-01", "minion-02", "minion-03", "shell"]
 
             await self._build_grid_layout(canvas, types_to_fit)
 
@@ -367,14 +365,34 @@ class DynamicWorkspace(Vertical):
             cli_type = data.get("cli_type", "all")
             self.detach_tile(tile_id, cli_type)
 
-    async def split_tile(self, tile_id: str, direction: str = "horizontal") -> None:
+    async def split_tile(self, tile_id: str, direction: str = "horizontal") -> bool:
         """Splits an active tile either horizontally (columns) or vertically (rows)."""
         target_tile = self._active_tiles.get(tile_id)
         if not target_tile or not target_tile.parent:
-            return
+            return False
+
+        # Guard 1: Maximum active tiles limit
+        if len(self._active_tiles) >= 8:
+            self.app.notify("Maksimum 8 bölme sınırına ulaşıldı, daha fazla bölünemez!", title="DAHA FAZLA BÖLÜNEMEZ", severity="warning")
+            return False
+
+        # Guard 2: Minimum size check to prevent collapsing or invisible tiles
+        w = target_tile.outer_size.width or target_tile.size.width
+        h = target_tile.outer_size.height or target_tile.size.height
+
+        if direction == "horizontal":
+            # Requires at least 18 columns so each sub-pane has usable space
+            if w > 0 and w < 18:
+                self.app.notify("Pencere çok dar, daha fazla bölünemez! (En az 18 sütun gerekli)", title="DAHA FAZLA BÖLÜNEMEZ", severity="warning")
+                return False
+        else:
+            # Requires at least 8 rows so each sub-pane has usable space
+            if h > 0 and h < 8:
+                self.app.notify("Pencere çok basık, daha fazla bölünemez! (En az 8 satır gerekli)", title="DAHA FAZLA BÖLÜNEMEZ", severity="warning")
+                return False
 
         parent = target_tile.parent
-        cli_options = ["shell", "minion-02", "minion-03", "error", "sniper"]
+        cli_options = ["shell", "minion-02", "minion-03", "minion-04", "minion-05"]
         # Pick next unused CLI type
         new_cli = "shell"
         for opt in cli_options:
@@ -425,6 +443,7 @@ class DynamicWorkspace(Vertical):
 
         new_tile.call_after_refresh(new_tile.focus_input)
         self.app.notify(f"Pencere bölündü: Yeni [{new_cli}] açıldı.", title="PENCERE BÖLÜNDÜ")
+        return True
 
     async def close_tile(self, tile_id: str) -> None:
         """Closes a tile and adjusts layout."""

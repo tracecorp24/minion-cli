@@ -14,7 +14,7 @@ from minion_fortress.ui.detached_window import DetachedMonitorApp
 from minion_fortress.ui.panes.minion_pane import MinionPane
 from minion_fortress.ui.panes.error_pane import ErrorHealthPane
 from minion_fortress.ui.panes.sniper_pane import LogSniperPane
-from minion_fortress.ui.panes.plugin_pane import PluginPane
+from minion_fortress.ui.panes.shell_pane import InteractiveShellPane
 from textual.widgets import Input, Button
 
 
@@ -37,11 +37,11 @@ async def test_ui_lifecycle_and_panes():
     async with app.run_test() as pilot:
         await pilot.pause(0.2)
 
-        # Verify all 4 dynamic tiling panes are mounted
+        # Verify dynamic tiling panes and sidebar monitors are mounted
         assert app.query_one(MinionPane) is not None
         assert app.query_one(ErrorHealthPane) is not None
         assert app.query_one(LogSniperPane) is not None
-        assert app.query_one(PluginPane) is not None
+        assert app.query_one(InteractiveShellPane) is not None
 
         # Test Banana Mode hotkey F12
         await pilot.press("f12")
@@ -110,12 +110,13 @@ async def test_detached_monitor_app():
 
 @pytest.mark.asyncio
 async def test_sidebar_tabs_and_single_initial_window():
-    """Verify that on initial startup:
-    1. Default preset is 'single' (only 1 window/pane open).
+    """Verify that:
+    1. Default preset is 'single' (only 1 agent window open).
     2. Other windows do not open until requested (auto_spawn_detached is False).
-    3. Left sidebar hosts all tab types (minion, shell, error, sniper, plugins).
-    4. Clicking sidebar tab buttons switches the active pane cleanly.
-    5. Mockup text streaming is disabled (no mock worker loops).
+    3. Left sidebar hosts Agent tabs (minion, shell, fit-all) and collapsible Watchdog & Sniper.
+    4. Clicking sidebar tab buttons switches the active agent pane cleanly.
+    5. Watchdog and Sniper expand and collapse cleanly in the sidebar.
+    6. Right workspace is dedicated to agent panes; plugin store is removed.
     """
     state = FortressState()
     bus = EventBus()
@@ -137,55 +138,67 @@ async def test_sidebar_tabs_and_single_initial_window():
     async with app.run_test() as pilot:
         await pilot.pause(0.2)
 
-        # 1. Exactly 1 active tile on initial launch
+        # 1. Exactly 1 active agent tile on initial launch
         from minion_fortress.ui.workspace import DynamicWorkspace
+        from textual.widgets import Collapsible
         ws = app.query_one(DynamicWorkspace)
         assert len(ws._active_tiles) == 1
         assert ws.current_preset == "single"
 
-        # 2. Verify all tab buttons exist in left sidebar
+        # 2. Verify agent tab buttons exist in left sidebar
         btn_minion = app.query_one("#tab-btn-minion", Button)
         btn_shell = app.query_one("#tab-btn-shell", Button)
-        btn_error = app.query_one("#tab-btn-error", Button)
-        btn_sniper = app.query_one("#tab-btn-sniper", Button)
-        btn_plugins = app.query_one("#tab-btn-plugins", Button)
+        btn_fit = app.query_one("#tab-btn-fit-all", Button)
 
         assert btn_minion is not None
         assert btn_shell is not None
-        assert btn_error is not None
-        assert btn_sniper is not None
-        assert btn_plugins is not None
+        assert btn_fit is not None
 
-        # Initially minion tab is active
+        # Verify plugin toolstore is removed from sidebar
+        assert len(app.query("#tab-btn-plugins")) == 0
+
+        # 3. Verify Watchdog & Sniper exist as Collapsibles in left sidebar
+        w_col = app.query_one("#sidebar-watchdog-collapsible", Collapsible)
+        s_col = app.query_one("#sidebar-sniper-collapsible", Collapsible)
+        assert w_col is not None
+        assert s_col is not None
+
+        # Initially collapsed for clean sidebar view
+        assert w_col.collapsed is True
+        assert s_col.collapsed is True
+
+        # Test expanding Watchdog on click / toggle
+        w_col.collapsed = False
+        await pilot.pause(0.05)
+        assert w_col.collapsed is False
+
+        # Test expanding Sniper on click / toggle
+        s_col.collapsed = False
+        await pilot.pause(0.05)
+        assert s_col.collapsed is False
+
+        # Initially minion tab is active on the right
         first_tile = next(iter(ws._active_tiles.values()))
         assert first_tile.cli_type == "minion-01"
 
-        # 3. Click Shell tab in sidebar -> switches to shell
+        # 4. Click Shell tab in sidebar -> switches to shell
         btn_shell.press()
         await pilot.pause(0.2)
         assert first_tile.cli_type == "shell"
         assert "sidebar-tab-active" in btn_shell.classes
 
-        # 4. Click Error tab in sidebar -> switches to error
-        btn_error.press()
+        # 5. Click Minion tab in sidebar -> switches back to minion-01
+        btn_minion.press()
         await pilot.pause(0.2)
-        assert first_tile.cli_type == "error"
-        assert "sidebar-tab-active" in btn_error.classes
+        assert first_tile.cli_type == "minion-01"
+        assert "sidebar-tab-active" in btn_minion.classes
 
-        # 5. Click Sniper tab in sidebar -> switches to sniper
-        btn_sniper.press()
-        await pilot.pause(0.2)
-        assert first_tile.cli_type == "sniper"
-        assert "sidebar-tab-active" in btn_sniper.classes
-
-        # 6. Click Plugins tab in sidebar -> switches to plugins
-        btn_plugins.press()
-        await pilot.pause(0.2)
-        assert first_tile.cli_type == "plugins"
-        assert "sidebar-tab-active" in btn_plugins.classes
-
-        # 7. Still only 1 window/tile open - other windows did NOT open!
-        assert len(ws._active_tiles) == 1
-
-        # Clean exit
+        # 6. Click 'Tümünü Sığdır (Grid)' tab in sidebar -> fits all agent windows
+        btn_fit.press()
+        await pilot.pause(0.25)
+        assert ws.current_preset == "fit_all"
+        assert len(ws._active_tiles) >= 3
+        # All panes on the right are agent windows!
+        for t in ws._active_tiles.values():
+            assert t.cli_type.startswith("minion-") or t.cli_type in ("shell", "agy")
         await app.action_quit()

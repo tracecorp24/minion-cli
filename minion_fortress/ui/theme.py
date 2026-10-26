@@ -563,4 +563,56 @@ DragSplitter.active-drag {{
     background: {INFO_CYAN};
     color: #000000;
 }}
+
+/* Sidebar Watchdog & Live Log Sniper Collapsible Styling */
+#left-sidebar Collapsible {{
+    background: #151515;
+    border-top: solid {BORDER_GRAY};
+    border-bottom: solid {BORDER_GRAY};
+    margin-top: 1;
+    margin-bottom: 1;
+    padding: 0;
+}}
+
+#left-sidebar Collapsible:focus-within {{
+    border-top: solid #00FF7F;
+    border-bottom: solid #00FF7F;
+}}
+
+#left-sidebar .pane-container {{
+    border: none !important;
+    background: transparent !important;
+    padding: 0 !important;
+    height: auto !important;
+    max-height: 14 !important;
+}}
+
+#left-sidebar .pane-title {{
+    display: none !important;
+}}
+
+#left-sidebar .log-stream {{
+    height: 8 !important;
+    min-height: 5 !important;
+    max-height: 12 !important;
+}}
+
+#left-sidebar #error-telemetry-badge {{
+    height: 1 !important;
+    padding: 0 1 !important;
+    color: #00FF7F;
+}}
+
+#left-sidebar #sniper-regex-input {{
+    height: 1 !important;
+    border: none !important;
+    padding: 0 1 !important;
+    background: #0A0A0A;
+}}
+
+#left-sidebar #sniper-status-bar {{
+    height: 1 !important;
+    padding: 0 1 !important;
+    color: {BANANA_GOLD};
+}}
 """

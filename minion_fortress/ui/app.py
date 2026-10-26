@@ -19,9 +19,11 @@ from typing import Optional
 from textual.app import App, ComposeResult
 from textual.binding import Binding
 from textual.containers import Horizontal, Vertical
-from textual.widgets import Header, Footer, Static, Input, DataTable, Button
+from textual.widgets import Header, Footer, Static, Input, DataTable, Button, Collapsible
 from textual.suggester import SuggestFromList
 from minion_fortress.ui.cli_input import CliCommandInput
+from minion_fortress.ui.panes.error_pane import ErrorHealthPane
+from minion_fortress.ui.panes.sniper_pane import LogSniperPane
 
 REPL_SUGGESTIONS = [
     "@01 pause",
@@ -115,17 +117,22 @@ class MinionFortressApp(App):
                 yield Static("📊 CLUSTER TELEMETRY", classes="section-header")
                 yield Static(self._render_telemetry_box(), id="cluster-telemetry-box", classes="telemetry-card")
 
-                yield Static("📑 SEKMELER / PENCERELER", classes="section-header")
+                yield Static("📑 AGENT SEKMELERİ", classes="section-header")
                 with Vertical(id="sidebar-tabs-container"):
                     yield Button("🤖 Minion Paneli", id="tab-btn-minion", classes="sidebar-tab-btn sidebar-tab-active")
                     yield Button("💻 Shell (Terminal CLI)", id="tab-btn-shell", classes="sidebar-tab-btn")
-                    yield Button("🚨 Watchdog Hata & Sağlık", id="tab-btn-error", classes="sidebar-tab-btn")
-                    yield Button("🎯 Live Log Sniper", id="tab-btn-sniper", classes="sidebar-tab-btn")
-                    yield Button("🧩 Eklenti & Araç Mağazası", id="tab-btn-plugins", classes="sidebar-tab-btn")
-                    yield Button("🗖 Tümünü Sığdır (Grid)", id="tab-btn-fit-all", classes="sidebar-tab-btn", tooltip="Tüm Pencereleri Ekrana Otomatik Sığdır (Satır/Sütun)")
+                    yield Button("🗖 Tümünü Sığdır (Grid)", id="tab-btn-fit-all", classes="sidebar-tab-btn", tooltip="Tüm Agent Pencerelerini Ekrana Otomatik Sığdır (Satır/Sütun)")
 
                 yield Static("🤖 MINION ROSTER (Tıkla & Aç)", classes="section-header")
                 yield DataTable(id="minion-roster-table")
+
+                # Watchdog Error & Health Monitor in Sidebar (Expandable on click)
+                with Collapsible(title="🛡️ WATCHDOG HATA & SAĞLIK", collapsed=True, id="sidebar-watchdog-collapsible"):
+                    yield ErrorHealthPane(self.state, self.event_bus)
+
+                # Live Log Sniper in Sidebar (Expandable on click)
+                with Collapsible(title="🎯 LIVE LOG SNIPER", collapsed=True, id="sidebar-sniper-collapsible"):
+                    yield LogSniperPane(self.state, self.event_bus)
 
             # Right Workspace: Modular Dynamic Tiling Canvas with Presets and Drag Resizing
             yield DynamicWorkspace(self.state, self.event_bus, self.plugin_manager, initial_preset=self.initial_preset)
@@ -240,9 +247,6 @@ class MinionFortressApp(App):
         tab_targets = {
             "tab-btn-minion": "minion-01",
             "tab-btn-shell": "shell",
-            "tab-btn-error": "error",
-            "tab-btn-sniper": "sniper",
-            "tab-btn-plugins": "plugins",
         }
         if btn_id in tab_targets:
             target_cli = tab_targets[btn_id]
@@ -263,9 +267,6 @@ class MinionFortressApp(App):
         """Dynamically styles the active tab button in the sidebar."""
         tab_buttons = {
             "shell": "tab-btn-shell",
-            "error": "tab-btn-error",
-            "sniper": "tab-btn-sniper",
-            "plugins": "tab-btn-plugins",
             "fit_all": "tab-btn-fit-all",
         }
         for cli, btn_id in tab_buttons.items():
@@ -349,17 +350,27 @@ class MinionFortressApp(App):
         self.run_worker(ws.apply_preset("fit_all"))
 
     def action_split_vertical(self) -> None:
-        """F3: Splits active tile vertically."""
+        """F3: Splits active tile vertically (into side-by-side columns)."""
         ws = self.query_one(DynamicWorkspace)
         if ws._active_tiles:
-            target_id = list(ws._active_tiles.keys())[0]
+            target_tile = None
+            for t in ws._active_tiles.values():
+                if t.has_focus or any(c.has_focus for c in t.walk_children()):
+                    target_tile = t
+                    break
+            target_id = target_tile.tile_id if target_tile else list(ws._active_tiles.keys())[0]
             self.run_worker(ws.split_tile(target_id, direction="horizontal"))
 
     def action_split_horizontal(self) -> None:
-        """F7: Splits active tile horizontally."""
+        """F7: Splits active tile horizontally (into stacked rows)."""
         ws = self.query_one(DynamicWorkspace)
         if ws._active_tiles:
-            target_id = list(ws._active_tiles.keys())[0]
+            target_tile = None
+            for t in ws._active_tiles.values():
+                if t.has_focus or any(c.has_focus for c in t.walk_children()):
+                    target_tile = t
+                    break
+            target_id = target_tile.tile_id if target_tile else list(ws._active_tiles.keys())[0]
             self.run_worker(ws.split_tile(target_id, direction="vertical"))
 
     def action_toggle_banana(self) -> None:

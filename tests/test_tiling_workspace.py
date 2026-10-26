@@ -730,43 +730,46 @@ async def test_fit_all_layout_button_and_grid_distribution():
         await pilot.pause(0.25)
 
         assert ws.current_preset == "fit_all"
-        # Fits all 5 core panes (minion-01, shell, error, sniper, plugins)
-        assert len(ws._active_tiles) == 5
+        # Fits active agent panes (minion-01, minion-02, minion-03, shell)
+        assert len(ws._active_tiles) == 4
         active_types = [t.cli_type for t in ws._active_tiles.values()]
         assert "minion-01" in active_types
+        assert "minion-02" in active_types
+        assert "minion-03" in active_types
         assert "shell" in active_types
-        assert "error" in active_types
-        assert "sniper" in active_types
-        assert "plugins" in active_types
+
+        # Verify all right-side panes are pure agent windows
+        for t in ws._active_tiles.values():
+            assert t.cli_type.startswith("minion-") or t.cli_type in ("shell", "agy")
 
         # Verify splitters are mounted between columns and rows
         from minion_fortress.ui.drag_splitter import DragSplitter
         splitters = list(ws.query(DragSplitter))
-        assert len(splitters) >= 4  # 1 vertical row splitter + horizontal col splitters
+        assert len(splitters) >= 3  # vertical row splitter + horizontal col splitters
 
         # 2. Switch back to single, then test sidebar button '🗖 Tümünü Sığdır (Grid)'
         btn_single = ws.query_one("#preset-single", Button)
         btn_single.press()
-        await pilot.pause(0.2)
+        await pilot.pause(0.3)
         assert len(ws._active_tiles) == 1
 
         btn_fit_sidebar = app.query_one("#tab-btn-fit-all", Button)
         assert btn_fit_sidebar is not None
         btn_fit_sidebar.press()
-        await pilot.pause(0.25)
+        await pilot.pause(0.3)
         assert ws.current_preset == "fit_all"
-        assert len(ws._active_tiles) == 5
+        assert len(ws._active_tiles) == 4
         assert "sidebar-tab-active" in btn_fit_sidebar.classes
 
         # 3. Test F9 hotkey trigger
         btn_single.press()
-        await pilot.pause(0.2)
+        await pilot.pause(0.3)
         assert len(ws._active_tiles) == 1
 
         await pilot.press("f9")
         await pilot.pause(0.25)
         assert ws.current_preset == "fit_all"
-        assert len(ws._active_tiles) == 5
+        assert len(ws._active_tiles) == 4
 
         await app.action_quit()
 
@@ -894,4 +897,59 @@ async def test_all_panes_retain_docked_input_field_under_splits_and_drag():
         assert state.minions["02"].status == MinionStatus.PAUSED
 
         await app.action_quit()
+
+
+@pytest.mark.asyncio
+async def test_split_tile_prevented_when_below_minimum_size():
+    """Verify that split_tile is prevented and emits a notification when tile width < 25 or height < 11."""
+    state = FortressState()
+    bus = EventBus()
+
+    app = MinionFortressApp(
+        state=state,
+        event_bus=bus,
+        auto_spawn_detached=False,
+        initial_preset="single",
+    )
+
+    # 1. Test horizontal split prevention on narrow tile
+    async with app.run_test(size=(65, 25)) as pilot:
+        await pilot.pause(0.2)
+        ws = app.query_one(DynamicWorkspace)
+        t1 = next(iter(ws._active_tiles.values()))
+
+        # First horizontal split: 65 cols (canvas ~27) splits into two ~13 col tiles
+        ok1 = await ws.split_tile(t1.tile_id, direction="horizontal")
+        assert ok1 is True
+        await pilot.pause(0.2)
+        assert len(ws._active_tiles) == 2
+
+        # Second horizontal split on a ~13 col tile (width < 18): must be prevented!
+        t1_after = ws._active_tiles[t1.tile_id]
+        ok2 = await ws.split_tile(t1_after.tile_id, direction="horizontal")
+        assert ok2 is False
+        # Active tiles count must remain 2 (no invisible background tile added!)
+        assert len(ws._active_tiles) == 2
+
+        await app.action_quit()
+
+    # 2. Test vertical split prevention on short tile
+    app2 = MinionFortressApp(
+        state=state,
+        event_bus=bus,
+        auto_spawn_detached=False,
+        initial_preset="single",
+    )
+    async with app2.run_test(size=(100, 14)) as pilot:
+        await pilot.pause(0.2)
+        ws2 = app2.query_one(DynamicWorkspace)
+        t_single = next(iter(ws2._active_tiles.values()))
+
+        # On a 14-row app, canvas height is <= 7 rows (< 8): vertical split must be prevented!
+        ok_v = await ws2.split_tile(t_single.tile_id, direction="vertical")
+        assert ok_v is False
+        assert len(ws2._active_tiles) == 1
+
+        await app2.action_quit()
+
 
