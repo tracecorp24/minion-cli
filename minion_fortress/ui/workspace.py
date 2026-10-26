@@ -124,17 +124,13 @@ class DynamicWorkspace(Vertical):
         self.last_focused_tile_id: Optional[str] = None
 
     def compose(self) -> ComposeResult:
-        # Layout Presets Quick Toolbar
+        # Layout Presets Quick Toolbar (Çok Pencereli Sistem Düzenleri)
         with Horizontal(id="preset-toolbar"):
-            yield Static("📐 DÜZEN (LAYOUT):", classes="preset-label")
-            yield Button("🔲 Tek", id="preset-single", classes="preset-btn preset-btn-active", tooltip="Tek Tam Ekran CLI")
-            yield Button("◫ 2 Sütun", id="preset-split-v", classes="preset-btn", tooltip="İki Dikey Sütun")
-            yield Button("⬒ 2 Satır", id="preset-split-h", classes="preset-btn", tooltip="İki Yatay Satır")
-            yield Button("⊞ 2x2 Grid", id="preset-grid-2x2", classes="preset-btn", tooltip="4'lü 2x2 Izgara")
-            yield Button("◰ Ana + Yan", id="preset-main-stack", classes="preset-btn", tooltip="Sol Ana + Sağ Yan Sütun")
-            yield Button("⫴ 3 Sütun", id="preset-three-cols", classes="preset-btn", tooltip="Üç Dikey Sütun")
-            yield Button("🗖 Tümünü Sığdır", id="preset-fit-all", classes="preset-btn", tooltip="Tüm Pencereleri Otomatik Satır ve Sütunlara Sığdır")
-            yield Button("➕ Yeni CLI", id="preset-add-tile", classes="preset-btn", tooltip="Yeni CLI Bölmesi Ekle")
+            yield Static("📐 ÇOKLU DÜZEN:", classes="preset-label")
+            yield Button("🗖 Tümünü Sığdır", id="preset-fit-all", classes="preset-btn preset-btn-active", tooltip="Tüm Açık Pencereleri Ekrana Otomatik Sığdır")
+            yield Button("⫴ 3 Sütun", id="preset-three-cols", classes="preset-btn", tooltip="Tüm Açık Pencereleri 3 Dikey Sütuna Dağıt")
+            yield Button("◰ Ana + Yan Yığın", id="preset-main-stack", classes="preset-btn", tooltip="Sol Ana Pencere + Sağ Yan Yığın")
+            yield Button("➕ Yeni Pencere", id="preset-add-tile", classes="preset-btn", tooltip="Yeni CLI Bölmesi Ekle")
 
         # Dynamic Tiling Container Canvas
         yield Vertical(id="workspace-canvas")
@@ -234,26 +230,25 @@ class DynamicWorkspace(Vertical):
             await canvas.mount(container)
 
         elif preset_name == "main_stack":
-            t1 = self._create_tile("minion-01")
-            h_splitter = DragSplitter(direction="horizontal")
-
-            t2 = self._create_tile("minion-02")
-            v_splitter = DragSplitter(direction="vertical")
-            t3 = self._create_tile("shell")
-
-            right_stack = Vertical(t2, v_splitter, t3, classes="split-row")
-            main_container = Horizontal(t1, h_splitter, right_stack, classes="split-col")
-            await canvas.mount(main_container)
+            types_to_arrange = target_tiles or (existing_types if existing_types else [])
+            if not types_to_arrange:
+                types_to_arrange = ["minion-01", "minion-02", "shell"]
+            elif len(types_to_arrange) < 2:
+                types_to_arrange = [types_to_arrange[0], "minion-02", "shell"]
+            await self._build_main_stack_layout(canvas, types_to_arrange)
 
         elif preset_name == "three_cols":
-            t1 = self._create_tile("minion-01")
-            s1 = DragSplitter(direction="horizontal")
-            t2 = self._create_tile("minion-02")
-            s2 = DragSplitter(direction="horizontal")
-            t3 = self._create_tile("shell")
-
-            container = Horizontal(t1, s1, t2, s2, t3, classes="split-col")
-            await canvas.mount(container)
+            types_to_arrange = target_tiles or (existing_types if existing_types else [])
+            if not types_to_arrange:
+                types_to_arrange = ["minion-01", "minion-02", "shell"]
+            elif len(types_to_arrange) < 3:
+                pool = ["minion-01", "shell", "minion-02", "minion-03", "minion-04", "minion-05"]
+                for p in pool:
+                    if p not in types_to_arrange:
+                        types_to_arrange.append(p)
+                    if len(types_to_arrange) >= 3:
+                        break
+            await self._build_three_cols_layout(canvas, types_to_arrange)
 
         elif preset_name == "fit_all":
             # Fits active agent windows into optimal row/col grid
@@ -322,6 +317,95 @@ class DynamicWorkspace(Vertical):
                 row_widgets.append(Horizontal(*h_children, classes="split-col"))
 
         container = Vertical(*row_widgets, classes="split-row")
+        await canvas.mount(container)
+
+    async def _build_three_cols_layout(self, canvas: Vertical, cli_types: List[str]) -> None:
+        """Distributes all cli_types across 3 vertical columns with drag splitters,
+        stacking extra windows vertically within columns so no active window is lost.
+        """
+        n = len(cli_types)
+        if n == 0:
+            return
+
+        if n == 1:
+            col = Horizontal(self._create_tile(cli_types[0]), classes="split-col")
+            await canvas.mount(col)
+            return
+
+        if n == 2:
+            t1 = self._create_tile(cli_types[0])
+            s = DragSplitter(direction="horizontal")
+            t2 = self._create_tile(cli_types[1])
+            col = Horizontal(t1, s, t2, classes="split-col")
+            await canvas.mount(col)
+            return
+
+        # n >= 3: distribute all n windows into 3 columns
+        num_cols = 3
+        base = n // num_cols
+        rem = n % num_cols
+
+        cols_tiles: List[List[str]] = []
+        idx = 0
+        for c in range(num_cols):
+            count = base + (1 if c < rem else 0)
+            cols_tiles.append(cli_types[idx : idx + count])
+            idx += count
+
+        col_widgets = []
+        for c_types in cols_tiles:
+            tiles = [self._create_tile(ctype) for ctype in c_types]
+            if len(tiles) == 1:
+                col_widgets.append(tiles[0])
+            else:
+                v_children = []
+                for t_idx, t in enumerate(tiles):
+                    if t_idx > 0:
+                        v_children.append(DragSplitter(direction="vertical"))
+                    v_children.append(t)
+                v_box = Vertical(*v_children, classes="split-row")
+                v_box.styles.width = "1fr"
+                v_box.styles.height = "100%"
+                col_widgets.append(v_box)
+
+        h_children = []
+        for i, col_w in enumerate(col_widgets):
+            if i > 0:
+                h_children.append(DragSplitter(direction="horizontal"))
+            h_children.append(col_w)
+
+        container = Horizontal(*h_children, classes="split-col")
+        container.styles.width = "100%"
+        container.styles.height = "100%"
+        await canvas.mount(container)
+
+    async def _build_main_stack_layout(self, canvas: Vertical, cli_types: List[str]) -> None:
+        """Arranges all cli_types into Main (left column) + Stack (right column with vertical splitters)."""
+        n = len(cli_types)
+        if n == 0:
+            return
+        if n == 1:
+            col = Horizontal(self._create_tile(cli_types[0]), classes="split-col")
+            await canvas.mount(col)
+            return
+
+        main_tile = self._create_tile(cli_types[0])
+        h_splitter = DragSplitter(direction="horizontal")
+
+        stack_tiles = [self._create_tile(ctype) for ctype in cli_types[1:]]
+        v_children = []
+        for i, t in enumerate(stack_tiles):
+            if i > 0:
+                v_children.append(DragSplitter(direction="vertical"))
+            v_children.append(t)
+
+        right_stack = Vertical(*v_children, classes="split-row")
+        right_stack.styles.width = "1fr"
+        right_stack.styles.height = "100%"
+
+        container = Horizontal(main_tile, h_splitter, right_stack, classes="split-col")
+        container.styles.width = "100%"
+        container.styles.height = "100%"
         await canvas.mount(container)
 
     def on_button_pressed(self, event: Button.Pressed) -> None:

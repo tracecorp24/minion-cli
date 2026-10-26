@@ -43,40 +43,39 @@ async def test_dynamic_workspace_presets():
         # Default preset is grid_2x2 with 4 tiles
         assert len(ws._active_tiles) == 4
 
-        # Test Switching to 'single' preset
-        btn_single = ws.query_one("#preset-single", Button)
-        btn_single.press()
-        await pilot.pause(0.2)
-        assert ws.current_preset == "single"
-        assert len(ws._active_tiles) == 1
-
-        # Test Switching to 'split_v' preset
-        btn_v = ws.query_one("#preset-split-v", Button)
-        btn_v.press()
-        await pilot.pause(0.2)
-        assert ws.current_preset == "split_v"
-        assert len(ws._active_tiles) == 2
+        # Verify that single, 2-col, 2-row, and 2x2 are removed from the multi-window toolbar
+        assert len(ws.query("#preset-single")) == 0
+        assert len(ws.query("#preset-split-v")) == 0
+        assert len(ws.query("#preset-split-h")) == 0
+        assert len(ws.query("#preset-grid-2x2")) == 0
 
         # Test Switching to 'main_stack' preset
         btn_stack = ws.query_one("#preset-main-stack", Button)
         btn_stack.press()
         await pilot.pause(0.2)
         assert ws.current_preset == "main_stack"
-        assert len(ws._active_tiles) == 3
+        assert len(ws._active_tiles) >= 3
 
-        # Test Switching to 'three_cols' preset
+        # Test Switching to 'three_cols' preset (preserves all windows across 3 columns)
         btn_3 = ws.query_one("#preset-three-cols", Button)
         btn_3.press()
         await pilot.pause(0.2)
         assert ws.current_preset == "three_cols"
-        assert len(ws._active_tiles) == 3
+        assert len(ws._active_tiles) >= 3
 
-        # Test Switching back to 'grid_2x2'
-        btn_grid = ws.query_one("#preset-grid-2x2", Button)
-        btn_grid.press()
+        # Test Switching to 'fit_all' preset
+        btn_fit = ws.query_one("#preset-fit-all", Button)
+        btn_fit.press()
         await pilot.pause(0.25)
-        assert ws.current_preset == "grid_2x2"
-        assert len(ws._active_tiles) == 4
+        assert ws.current_preset == "fit_all"
+        assert len(ws._active_tiles) >= 3
+
+        # Test Adding a new CLI tile via toolbar button
+        btn_add = ws.query_one("#preset-add-tile", Button)
+        count_before = len(ws._active_tiles)
+        btn_add.press()
+        await pilot.pause(0.2)
+        assert len(ws._active_tiles) == count_before + 1
 
         await app.action_quit()
 
@@ -377,7 +376,7 @@ async def test_three_panes_paired_splitter_and_input_typing():
         ws = app.query_one(DynamicWorkspace)
 
         # Apply 3 columns layout preset
-        await ws.apply_preset("three_cols")
+        await ws.apply_preset("three_cols", target_tiles=["minion-01", "minion-02", "shell"])
         await pilot.pause(0.2)
         assert len(ws._active_tiles) == 3
 
@@ -748,8 +747,7 @@ async def test_fit_all_layout_button_and_grid_distribution():
         assert len(splitters) >= 3  # vertical row splitter + horizontal col splitters
 
         # 2. Switch back to single, then test sidebar button '🗖 Tümünü Sığdır (Grid)'
-        btn_single = ws.query_one("#preset-single", Button)
-        btn_single.press()
+        await ws.apply_preset("single")
         await pilot.pause(0.3)
         assert len(ws._active_tiles) == 1
 
@@ -762,7 +760,7 @@ async def test_fit_all_layout_button_and_grid_distribution():
         assert "sidebar-tab-active" in btn_fit_sidebar.classes
 
         # 3. Test F9 hotkey trigger
-        btn_single.press()
+        await ws.apply_preset("single")
         await pilot.pause(0.3)
         assert len(ws._active_tiles) == 1
 
@@ -951,5 +949,57 @@ async def test_split_tile_prevented_when_below_minimum_size():
         assert len(ws2._active_tiles) == 1
 
         await app2.action_quit()
+
+
+@pytest.mark.asyncio
+async def test_three_cols_layout_preserves_all_windows_without_destroying_any():
+    """Verify that clicking '3 Sütun' distributes all active windows across 3 columns
+    without destroying or losing any windows.
+    """
+    state = FortressState()
+    bus = EventBus()
+
+    app = MinionFortressApp(
+        state=state,
+        event_bus=bus,
+        auto_spawn_detached=False,
+        initial_preset="single",
+    )
+
+    async with app.run_test(size=(120, 40)) as pilot:
+        await pilot.pause(0.2)
+        ws = app.query_one(DynamicWorkspace)
+
+        # 1. Start with 1 window, add tiles to have 5 active windows
+        btn_add = ws.query_one("#preset-add-tile", Button)
+        for _ in range(4):
+            btn_add.press()
+            await pilot.pause(0.15)
+
+        assert len(ws._active_tiles) == 5
+        types_before = [t.cli_type for t in ws._active_tiles.values()]
+        assert len(types_before) == 5
+
+        # 2. Click '3 Sütun' button
+        btn_3 = ws.query_one("#preset-three-cols", Button)
+        btn_3.press()
+        await pilot.pause(0.3)
+
+        assert ws.current_preset == "three_cols"
+        # All 5 windows must be preserved!
+        assert len(ws._active_tiles) == 5
+        types_after = [t.cli_type for t in ws._active_tiles.values()]
+        assert sorted(types_after) == sorted(types_before)
+
+        # 3. Test 'Ana + Yan Yığın' also preserves all 5 windows
+        btn_stack = ws.query_one("#preset-main-stack", Button)
+        btn_stack.press()
+        await pilot.pause(0.3)
+
+        assert ws.current_preset == "main_stack"
+        assert len(ws._active_tiles) == 5
+
+        await app.action_quit()
+
 
 
