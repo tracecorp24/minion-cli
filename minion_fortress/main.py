@@ -22,7 +22,9 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--daemon", action="store_true", help="Run background daemon without TUI")
     parser.add_argument("--export", action="store_true", help="Generate instantaneous system snapshot report and exit")
-    parser.add_argument("--no-detached", action="store_true", help="Do not automatically open the detached monitor window")
+    parser.add_argument("--detached", action="store_true", help="Automatically open the detached monitor window on startup")
+    parser.add_argument("--no-detached", action="store_true", help="Do not open detached window (default)")
+    parser.add_argument("--layout", default="single", choices=["single", "grid_2x2", "split_v", "split_h", "main_stack", "three_cols"], help="Initial layout preset (default: single)")
     parser.add_argument("--version", action="version", version="Minion Fortress v3.0.0")
     return parser.parse_args()
 
@@ -70,7 +72,8 @@ def run_app() -> None:
         event_bus=event_bus,
         daemon=daemon,
         plugin_manager=plugin_mgr,
-        auto_spawn_detached=not args.no_detached,
+        auto_spawn_detached=args.detached,
+        initial_preset=args.layout,
     )
     app.run()
 

@@ -63,6 +63,39 @@ Footer {{
     border-right: heavy {BORDER_YELLOW};
     background: {PANEL_BG};
     padding: 0 1;
+    overflow-y: auto;
+}}
+
+#sidebar-tabs-container {{
+    height: auto;
+    margin-bottom: 1;
+    background: #141414;
+    border: solid {BORDER_GRAY};
+    padding: 0;
+}}
+
+.sidebar-tab-btn {{
+    width: 100%;
+    min-width: 100%;
+    height: 1;
+    margin: 0;
+    background: #1E1E1E;
+    color: #E0E0E0;
+    border: none;
+    text-align: left;
+    padding-left: 1;
+}}
+
+.sidebar-tab-btn:hover {{
+    background: {BANANA_YELLOW};
+    color: #000000;
+    text-style: bold;
+}}
+
+.sidebar-tab-active {{
+    background: #00FF7F !important;
+    color: #000000 !important;
+    text-style: bold;
 }}
 
 #right-canvas {{

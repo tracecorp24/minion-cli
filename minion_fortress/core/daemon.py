@@ -24,23 +24,30 @@ logger = logging.getLogger("MinionDaemon")
 class MinionDaemon:
     """Core daemon managing minion execution, telemetry, and Watchdog self-healing."""
 
-    def __init__(self, state: FortressState, event_bus: EventBus, plugin_manager: PluginManager) -> None:
+    def __init__(
+        self,
+        state: FortressState,
+        event_bus: EventBus,
+        plugin_manager: PluginManager,
+        simulate_mock: bool = False,
+    ) -> None:
         self.state = state
         self.event_bus = event_bus
         self.plugin_manager = plugin_manager
         self.plugin_manager.set_event_bus(event_bus)
+        self.simulate_mock: bool = simulate_mock
         self.running: bool = False
         self._tasks: List[asyncio.Task] = []
         self._init_minions()
 
     def _init_minions(self) -> None:
-        """Initializes default minions matching Minion Fortress v3.0 plan."""
+        """Initializes default minions cleanly without mock task spam."""
         initial_configs = [
-            ("01", "ast-parser", MinionStatus.RUNNING, "qwen-2.5-coder", "Mapping AST syntax trees (Node #142)"),
-            ("02", "net-mon", MinionStatus.IDLE, "glm-4-flash", "Awaiting socket stream traffic"),
-            ("03", "quant", MinionStatus.BUSY, "deepseek-r1", "Computing FP8 quantization tensors"),
-            ("04", "doc-ext", MinionStatus.PAUSED, "qwen-2.5-coder", "Standby for incoming PDF/markdown docs"),
-            ("05", "code-synth", MinionStatus.RUNNING, "qwen-2.5-coder", "Generating unit test coverage"),
+            ("01", "ast-parser", MinionStatus.RUNNING, "qwen-2.5-coder", "Hazır (Boşta)"),
+            ("02", "net-mon", MinionStatus.IDLE, "glm-4-flash", "Hazır (Boşta)"),
+            ("03", "quant", MinionStatus.BUSY, "deepseek-r1", "Hazır (Boşta)"),
+            ("04", "doc-ext", MinionStatus.PAUSED, "qwen-2.5-coder", "Hazır (Boşta)"),
+            ("05", "code-synth", MinionStatus.RUNNING, "qwen-2.5-coder", "Hazır (Boşta)"),
         ]
 
         for mid, name, status, model, task in initial_configs:
@@ -50,21 +57,20 @@ class MinionDaemon:
                 status=status,
                 model=model,
                 current_task=task,
-                cpu=12.0 if status == MinionStatus.RUNNING else (45.0 if status == MinionStatus.BUSY else 0.5),
-                memory_mb=round(random.uniform(220.0, 580.0), 1),
-                progress=random.randint(40, 85) if status not in (MinionStatus.IDLE, MinionStatus.PAUSED) else 0,
+                cpu=0.0,
+                memory_mb=128.0,
+                progress=0,
             )
-            entry = minion.add_log("INFO", f"Minion worker initialized [PID: {os.getpid()}]")
             self.state.minions[mid] = minion
-            self.state.add_global_log("INFO", f"minion-{mid}", f"Worker registered: {name} ({model})")
 
     async def start(self) -> None:
-        """Starts worker simulator, telemetry loop, and Watchdog self-healer."""
+        """Starts core background tasks and Watchdog self-healer."""
         self.running = True
-        self._tasks.append(asyncio.create_task(self._worker_loop()))
         self._tasks.append(asyncio.create_task(self._telemetry_loop()))
         self._tasks.append(asyncio.create_task(self._watchdog_loop()))
-        self._tasks.append(asyncio.create_task(self._periodic_anomaly_loop()))
+        if self.simulate_mock:
+            self._tasks.append(asyncio.create_task(self._worker_loop()))
+            self._tasks.append(asyncio.create_task(self._periodic_anomaly_loop()))
 
     async def stop(self) -> None:
         """Gracefully halts daemon."""
@@ -183,6 +189,10 @@ class MinionDaemon:
         """Publishes system metrics to the event bus every 2 seconds."""
         while self.running:
             await asyncio.sleep(2.0)
+            now = time.time()
+            for m in self.state.minions.values():
+                if m.status in (MinionStatus.RUNNING, MinionStatus.BUSY):
+                    m.last_heartbeat = now
             self.event_bus.publish_nowait(
                 Event(
                     type=EventType.TELEMETRY,

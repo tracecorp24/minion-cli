@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import Optional, Dict, Any, List
 
 from textual.app import ComposeResult
+from textual import events
 from textual.widgets import Static, Button
 from textual.containers import Vertical, Horizontal
 from rich.text import Text
@@ -107,7 +108,7 @@ class DynamicWorkspace(Vertical):
         state: FortressState,
         event_bus: EventBus,
         plugin_manager: Optional[PluginManager] = None,
-        initial_preset: str = "grid_2x2",
+        initial_preset: str = "single",
     ) -> None:
         super().__init__(id="right-canvas")
         self.state = state
@@ -116,21 +117,43 @@ class DynamicWorkspace(Vertical):
         self.current_preset = initial_preset
         self._tile_counter: int = 1
         self._active_tiles: Dict[str, CliTilePane] = {}
+        self.last_focused_tile_id: Optional[str] = None
 
     def compose(self) -> ComposeResult:
         # Layout Presets Quick Toolbar
         with Horizontal(id="preset-toolbar"):
             yield Static("📐 DÜZEN (LAYOUT):", classes="preset-label")
-            yield Button("🔲 Tek", id="preset-single", classes="preset-btn", tooltip="Tek Tam Ekran CLI")
+            yield Button("🔲 Tek", id="preset-single", classes="preset-btn preset-btn-active", tooltip="Tek Tam Ekran CLI")
             yield Button("◫ 2 Sütun", id="preset-split-v", classes="preset-btn", tooltip="İki Dikey Sütun")
             yield Button("⬒ 2 Satır", id="preset-split-h", classes="preset-btn", tooltip="İki Yatay Satır")
-            yield Button("⊞ 2x2 Grid", id="preset-grid-2x2", classes="preset-btn preset-btn-active", tooltip="4'lü 2x2 Izgara")
+            yield Button("⊞ 2x2 Grid", id="preset-grid-2x2", classes="preset-btn", tooltip="4'lü 2x2 Izgara")
             yield Button("◰ Ana + Yan", id="preset-main-stack", classes="preset-btn", tooltip="Sol Ana + Sağ Yan Sütun")
             yield Button("⫴ 3 Sütun", id="preset-three-cols", classes="preset-btn", tooltip="Üç Dikey Sütun")
             yield Button("➕ Yeni CLI", id="preset-add-tile", classes="preset-btn", tooltip="Yeni CLI Bölmesi Ekle")
 
         # Dynamic Tiling Container Canvas
         yield Vertical(id="workspace-canvas")
+
+    def on_descendant_focus(self, event: events.DescendantFocus) -> None:
+        """Track which tile has focus for seamless tab switching."""
+        for tid, tile in self._active_tiles.items():
+            if tile.has_focus or any(c.has_focus for c in tile.walk_children()):
+                self.last_focused_tile_id = tid
+                break
+
+    async def switch_active_or_first_tile(self, cli_type: str) -> None:
+        """Switches the active or first CLI tile to the specified cli_type."""
+        if not self._active_tiles:
+            await self.apply_preset("single")
+
+        target_tile = None
+        if self.last_focused_tile_id and self.last_focused_tile_id in self._active_tiles:
+            target_tile = self._active_tiles[self.last_focused_tile_id]
+        elif self._active_tiles:
+            target_tile = next(iter(self._active_tiles.values()))
+
+        if target_tile:
+            await target_tile.switch_cli(cli_type)
 
     async def on_mount(self) -> None:
         await self.apply_preset(self.current_preset)
@@ -175,30 +198,21 @@ class DynamicWorkspace(Vertical):
             await canvas.mount(tile)
 
         elif preset_name == "split_v":
-            container = Horizontal(classes="split-col")
             t1 = self._create_tile("minion-01")
             t2 = self._create_tile("shell")
             splitter = DragSplitter(direction="horizontal")
+            container = Horizontal(t1, splitter, t2, classes="split-col")
             await canvas.mount(container)
-            await container.mount(t1)
-            await container.mount(splitter)
-            await container.mount(t2)
 
         elif preset_name == "split_h":
-            container = Vertical(classes="split-row")
             t1 = self._create_tile("minion-01")
             t2 = self._create_tile("error")
             splitter = DragSplitter(direction="vertical")
+            container = Vertical(t1, splitter, t2, classes="split-row")
             await canvas.mount(container)
-            await container.mount(t1)
-            await container.mount(splitter)
-            await container.mount(t2)
 
         elif preset_name == "grid_2x2":
             # 2 rows x 2 cols with horizontal and vertical drag splitters
-            container = Vertical(classes="split-row")
-            top_row = Horizontal(classes="split-col")
-            bot_row = Horizontal(classes="split-col")
             v_splitter = DragSplitter(direction="vertical")
 
             t1 = self._create_tile("minion-01")
@@ -209,51 +223,34 @@ class DynamicWorkspace(Vertical):
             h_split1 = DragSplitter(direction="horizontal")
             h_split2 = DragSplitter(direction="horizontal")
 
+            top_row = Horizontal(t1, h_split1, t2, classes="split-col")
+            bot_row = Horizontal(t3, h_split2, t4, classes="split-col")
+            container = Vertical(top_row, v_splitter, bot_row, classes="split-row")
+
             await canvas.mount(container)
-            await container.mount(top_row)
-            await top_row.mount(t1)
-            await top_row.mount(h_split1)
-            await top_row.mount(t2)
-
-            await container.mount(v_splitter)
-
-            await container.mount(bot_row)
-            await bot_row.mount(t3)
-            await bot_row.mount(h_split2)
-            await bot_row.mount(t4)
 
         elif preset_name == "main_stack":
-            main_container = Horizontal(classes="split-col")
             t1 = self._create_tile("minion-01")
             h_splitter = DragSplitter(direction="horizontal")
 
-            right_stack = Vertical(classes="split-row")
             t2 = self._create_tile("error")
             v_splitter = DragSplitter(direction="vertical")
             t3 = self._create_tile("shell")
 
+            right_stack = Vertical(t2, v_splitter, t3, classes="split-row")
+            main_container = Horizontal(t1, h_splitter, right_stack, classes="split-col")
+
             await canvas.mount(main_container)
-            await main_container.mount(t1)
-            await main_container.mount(h_splitter)
-            await main_container.mount(right_stack)
-            await right_stack.mount(t2)
-            await right_stack.mount(v_splitter)
-            await right_stack.mount(t3)
 
         elif preset_name == "three_cols":
-            container = Horizontal(classes="split-col")
             t1 = self._create_tile("minion-01")
             s1 = DragSplitter(direction="horizontal")
             t2 = self._create_tile("minion-02")
             s2 = DragSplitter(direction="horizontal")
             t3 = self._create_tile("shell")
 
+            container = Horizontal(t1, s1, t2, s2, t3, classes="split-col")
             await canvas.mount(container)
-            await container.mount(t1)
-            await container.mount(s1)
-            await container.mount(t2)
-            await container.mount(s2)
-            await container.mount(t3)
 
         if self._active_tiles:
             first_tile = next(iter(self._active_tiles.values()))

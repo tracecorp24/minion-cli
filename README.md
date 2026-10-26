@@ -67,7 +67,7 @@ minion_fortress/
 Windows ortamında `run.bat` dosyasına çift tıklayarak çalıştırabilirsiniz. `run.bat`:
 - Sanal ortam (`.venv`) yoksa otomatik olarak oluşturur.
 - Gerekli paketleri `requirements.txt` üzerinden otomatik yükler.
-- Ana Komuta Kalesini açar ve ardından **ikinci monitör penceresini (Detached Window Node)** otomatik olarak ayrı bir konsol penceresinde başlatır!
+- Ana Komuta Kalesini temiz ve tek pencere modunda başlatır (sol sidebardan tüm sekme tipleri kontrol edilebilir).
 
 ```cmd
 run.bat
@@ -75,11 +75,14 @@ run.bat
 
 ### 2. Python ile Doğrudan Başlatma
 ```bash
-# İlk pencere açılır ve ikinci pencere otomatik olarak yeni bir konsolda başlatılır:
+# Temiz başlangıç: Sol sidebarda tüm sekmeler, tek çalışma alanı (ekstra pencere açılmaz):
 python main.py
 
-# Yalnızca tek pencere modunda çalıştırmak için:
-python main.py --no-detached
+# İkinci monitör penceresini başlangıçta otomatik açmak isterseniz:
+python main.py --detached
+
+# Başlangıç düzenini belirleyerek çalıştırmak için (single, grid_2x2, split_v, split_h, three_cols):
+python main.py --layout grid_2x2
 
 # İkinci pencereyi doğrudan bağımsız çalıştırmak için:
 python detached_monitor.py

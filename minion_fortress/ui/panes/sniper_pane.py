@@ -13,6 +13,7 @@ from rich.text import Text
 
 from minion_fortress.core.state import FortressState, LogEntry
 from minion_fortress.core.event_bus import EventBus, Event, EventType
+from minion_fortress.ui.cli_input import CliCommandInput
 
 
 class LogSniperPane(Vertical):
@@ -27,7 +28,7 @@ class LogSniperPane(Vertical):
 
     def compose(self) -> ComposeResult:
         yield Static("🔍 CUSTOM LOG SNIPER (Live Regex Filter)", classes="pane-title sniper-title")
-        yield Input(
+        yield CliCommandInput(
             placeholder="Regex pattern (e.g. [ERROR|429|AST|timeout])...",
             id="sniper-regex-input",
         )

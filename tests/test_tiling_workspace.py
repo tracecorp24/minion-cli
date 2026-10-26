@@ -32,6 +32,7 @@ async def test_dynamic_workspace_presets():
         daemon=daemon,
         plugin_manager=plugin_mgr,
         auto_spawn_detached=False,
+        initial_preset="grid_2x2",
     )
 
     async with app.run_test() as pilot:
@@ -93,6 +94,7 @@ async def test_right_click_context_menu_and_actions():
         daemon=daemon,
         plugin_manager=plugin_mgr,
         auto_spawn_detached=False,
+        initial_preset="grid_2x2",
     )
 
     async with app.run_test() as pilot:
@@ -157,6 +159,7 @@ async def test_tile_cli_switch():
         daemon=daemon,
         plugin_manager=plugin_mgr,
         auto_spawn_detached=False,
+        initial_preset="grid_2x2",
     )
 
     async with app.run_test() as pilot:
@@ -196,6 +199,7 @@ async def test_drag_splitter_resizing():
         daemon=daemon,
         plugin_manager=plugin_mgr,
         auto_spawn_detached=False,
+        initial_preset="grid_2x2",
     )
 
     async with app.run_test() as pilot:
@@ -280,6 +284,7 @@ async def test_splits_do_not_collapse_terminals():
         daemon=daemon,
         plugin_manager=plugin_mgr,
         auto_spawn_detached=False,
+        initial_preset="grid_2x2",
     )
 
     async with app.run_test(size=(140, 45)) as pilot:
@@ -364,6 +369,7 @@ async def test_three_panes_paired_splitter_and_input_typing():
         daemon=daemon,
         plugin_manager=plugin_mgr,
         auto_spawn_detached=False,
+        initial_preset="grid_2x2",
     )
 
     async with app.run_test(size=(120, 40)) as pilot:
@@ -479,6 +485,7 @@ async def test_tile_command_history_and_clipboard_paste():
         daemon=daemon,
         plugin_manager=plugin_mgr,
         auto_spawn_detached=False,
+        initial_preset="grid_2x2",
     )
 
     async with app.run_test(size=(120, 40)) as pilot:
@@ -524,10 +531,16 @@ async def test_tile_command_history_and_clipboard_paste():
         await pilot.press("down")
         assert tile_input.value == ""
 
-        # 4. Test paste functionality into tile input
-        tile_input.value = ""
-        tile.query_one(f"#input-{tile.tile_id}", Input).value = "pasted_cmd"
-        assert tile_input.value == "pasted_cmd"
+        # 4. Test Ctrl+A select-all and Ctrl+V paste functionality into tile input
+        tile_input.value = "agy --dangerously-skip-permissions"
+        tile_input.cursor_position = len(tile_input.value)
+        await pilot.press("ctrl+a")
+        assert tile_input.selected_text == "agy --dangerously-skip-permissions"
+
+        from unittest.mock import patch
+        with patch("minion_fortress.ui.cli_input.get_clipboard_text", return_value="custom_pasted_cmd"):
+            await pilot.press("ctrl+v")
+            assert tile_input.value == "custom_pasted_cmd"
 
         # 5. Verify Context Menu has Paste button when opened
         app.push_screen(TileContextMenu(tile.tile_id, tile.cli_type))

@@ -31,6 +31,7 @@ async def test_ui_lifecycle_and_panes():
         daemon=daemon,
         plugin_manager=plugin_mgr,
         auto_spawn_detached=False,
+        initial_preset="grid_2x2",
     )
 
     async with app.run_test() as pilot:
@@ -105,3 +106,86 @@ async def test_detached_monitor_app():
         assert monitor.query_one("#error-stream") is not None
         assert monitor.query_one("#activity-stream") is not None
         monitor.exit()
+
+
+@pytest.mark.asyncio
+async def test_sidebar_tabs_and_single_initial_window():
+    """Verify that on initial startup:
+    1. Default preset is 'single' (only 1 window/pane open).
+    2. Other windows do not open until requested (auto_spawn_detached is False).
+    3. Left sidebar hosts all tab types (minion, shell, error, sniper, plugins).
+    4. Clicking sidebar tab buttons switches the active pane cleanly.
+    5. Mockup text streaming is disabled (no mock worker loops).
+    """
+    state = FortressState()
+    bus = EventBus()
+    plugin_mgr = PluginManager()
+    daemon = MinionDaemon(state, bus, plugin_mgr)
+
+    assert daemon.simulate_mock is False
+
+    app = MinionFortressApp(
+        state=state,
+        event_bus=bus,
+        daemon=daemon,
+        plugin_manager=plugin_mgr,
+    )
+
+    assert app.auto_spawn_detached is False
+    assert app.initial_preset == "single"
+
+    async with app.run_test() as pilot:
+        await pilot.pause(0.2)
+
+        # 1. Exactly 1 active tile on initial launch
+        from minion_fortress.ui.workspace import DynamicWorkspace
+        ws = app.query_one(DynamicWorkspace)
+        assert len(ws._active_tiles) == 1
+        assert ws.current_preset == "single"
+
+        # 2. Verify all tab buttons exist in left sidebar
+        btn_minion = app.query_one("#tab-btn-minion", Button)
+        btn_shell = app.query_one("#tab-btn-shell", Button)
+        btn_error = app.query_one("#tab-btn-error", Button)
+        btn_sniper = app.query_one("#tab-btn-sniper", Button)
+        btn_plugins = app.query_one("#tab-btn-plugins", Button)
+
+        assert btn_minion is not None
+        assert btn_shell is not None
+        assert btn_error is not None
+        assert btn_sniper is not None
+        assert btn_plugins is not None
+
+        # Initially minion tab is active
+        first_tile = next(iter(ws._active_tiles.values()))
+        assert first_tile.cli_type == "minion-01"
+
+        # 3. Click Shell tab in sidebar -> switches to shell
+        btn_shell.press()
+        await pilot.pause(0.1)
+        assert first_tile.cli_type == "shell"
+        assert "sidebar-tab-active" in btn_shell.classes
+
+        # 4. Click Error tab in sidebar -> switches to error
+        btn_error.press()
+        await pilot.pause(0.1)
+        assert first_tile.cli_type == "error"
+        assert "sidebar-tab-active" in btn_error.classes
+
+        # 5. Click Sniper tab in sidebar -> switches to sniper
+        btn_sniper.press()
+        await pilot.pause(0.1)
+        assert first_tile.cli_type == "sniper"
+        assert "sidebar-tab-active" in btn_sniper.classes
+
+        # 6. Click Plugins tab in sidebar -> switches to plugins
+        btn_plugins.press()
+        await pilot.pause(0.1)
+        assert first_tile.cli_type == "plugins"
+        assert "sidebar-tab-active" in btn_plugins.classes
+
+        # 7. Still only 1 window/tile open - other windows did NOT open!
+        assert len(ws._active_tiles) == 1
+
+        # Clean exit
+        await app.action_quit()

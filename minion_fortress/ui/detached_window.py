@@ -22,6 +22,7 @@ from textual.binding import Binding
 from textual.containers import Horizontal, Vertical
 from textual.widgets import Header, Footer, Static, RichLog, Input
 from rich.text import Text
+from minion_fortress.ui.cli_input import CliCommandInput
 
 DETACHED_CSS = """
 Screen {
@@ -119,7 +120,7 @@ class DetachedMonitorApp(App):
 
         ph = f"Send command to {self.target_cli} (e.g. pause, resume, banana, heal)..." if self.target_cli != "all" else "Send command to Main Fortress (e.g. banana, heal 01, @01 pause)..."
         with Horizontal(id="cmd-bar"):
-            yield Input(placeholder=ph, id="remote-cmd-input")
+            yield CliCommandInput(placeholder=ph, id="remote-cmd-input")
 
         yield Footer()
 

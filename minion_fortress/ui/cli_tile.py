@@ -24,35 +24,7 @@ from minion_fortress.ui.panes.sniper_pane import LogSniperPane
 from minion_fortress.ui.panes.plugin_pane import PluginPane
 from minion_fortress.ui.panes.shell_pane import InteractiveShellPane
 from minion_fortress.ui.context_menu import TileContextMenu, CliSelectorModal
-
-
-def get_clipboard_text() -> str:
-    """Safely retrieves text from system clipboard using tkinter or powershell fallback."""
-    try:
-        import tkinter as tk
-        r = tk.Tk()
-        r.withdraw()
-        val = r.clipboard_get()
-        r.destroy()
-        if val:
-            return str(val)
-    except Exception:
-        pass
-
-    try:
-        import subprocess
-        res = subprocess.run(
-            ["powershell", "-NoProfile", "-Command", "Get-Clipboard"],
-            capture_output=True,
-            text=True,
-            timeout=1,
-        )
-        if res.stdout:
-            return res.stdout.strip("\r\n")
-    except Exception:
-        pass
-
-    return ""
+from minion_fortress.ui.cli_input import CliCommandInput, get_clipboard_text, set_clipboard_text
 
 
 class CliTilePane(Vertical):
@@ -236,7 +208,7 @@ class CliTilePane(Vertical):
         # Dedicated per-tile command prompt
         with Horizontal(classes="tile-input-container"):
             yield Static(f"[{self.cli_type}]>", id=f"prompt-lbl-{self.tile_id}", classes="tile-prompt-tag")
-            yield Input(
+            yield CliCommandInput(
                 placeholder=self._get_input_placeholder(),
                 id=f"input-{self.tile_id}",
                 classes="tile-cli-input",
@@ -324,19 +296,16 @@ class CliTilePane(Vertical):
     def paste_clipboard(self) -> None:
         """Pastes text from system clipboard directly into this tile's command input."""
         try:
-            text = get_clipboard_text().strip("\r\n")
-            if not text:
-                return
             inp = self.query_one(f"#input-{self.tile_id}", Input)
-            if hasattr(inp, "insert_text_at_cursor"):
-                inp.insert_text_at_cursor(text)
+            if hasattr(inp, "action_os_paste"):
+                inp.action_os_paste()
             else:
-                inp.value += text
-                inp.cursor_position = len(inp.value)
-            inp.focus()
-            self.app.notify(f"📋 Panodan yapıştırıldı: {text[:28]}...", title="YAPIŞTIRILDI", timeout=1.5)
-        except Exception as e:
-            self.app.notify(f"Panodan yapıştırılamadı: {e}", severity="error")
+                text = get_clipboard_text().strip("\r\n")
+                if text:
+                    inp.insert_text_at_cursor(text)
+                    inp.focus()
+        except Exception:
+            pass
 
     def on_mount(self) -> None:
         self.call_after_refresh(self.focus_input)

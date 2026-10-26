@@ -19,8 +19,9 @@ from typing import Optional
 from textual.app import App, ComposeResult
 from textual.binding import Binding
 from textual.containers import Horizontal, Vertical
-from textual.widgets import Header, Footer, Static, Input, DataTable
+from textual.widgets import Header, Footer, Static, Input, DataTable, Button
 from textual.suggester import SuggestFromList
+from minion_fortress.ui.cli_input import CliCommandInput
 
 REPL_SUGGESTIONS = [
     "@01 pause",
@@ -86,7 +87,8 @@ class MinionFortressApp(App):
         event_bus: Optional[EventBus] = None,
         daemon: Optional[MinionDaemon] = None,
         plugin_manager: Optional[PluginManager] = None,
-        auto_spawn_detached: bool = True,
+        auto_spawn_detached: bool = False,
+        initial_preset: str = "single",
     ) -> None:
         super().__init__()
         self.state = state or FortressState()
@@ -96,8 +98,10 @@ class MinionFortressApp(App):
         self.state.plugins = self.plugin_manager.get_all()
         self.daemon = daemon or MinionDaemon(self.state, self.event_bus, self.plugin_manager)
         self.auto_spawn_detached = auto_spawn_detached
+        self.initial_preset = initial_preset
         self.process = psutil.Process(os.getpid())
         self._refresh_timer = None
+        self.current_active_tab: str = "minion-01"
 
     def compose(self) -> ComposeResult:
         # Top Global Telemetry Banner
@@ -105,19 +109,28 @@ class MinionFortressApp(App):
 
         # Main Workspace: Left Sidebar + Right Dynamic Tiling Workspace
         with Horizontal(id="app-grid"):
-            # Left Sidebar: Cluster Telemetry & Minion Roster
+            # Left Sidebar: Cluster Telemetry, Tab Navigation & Minion Roster
             with Vertical(id="left-sidebar"):
                 yield Static("📊 CLUSTER TELEMETRY", classes="section-header")
                 yield Static(self._render_telemetry_box(), id="cluster-telemetry-box", classes="telemetry-card")
-                yield Static("🤖 MINION ROSTER (Click to Focus)", classes="section-header")
+
+                yield Static("📑 SEKMELER / PENCERELER", classes="section-header")
+                with Vertical(id="sidebar-tabs-container"):
+                    yield Button("🤖 Minion Paneli", id="tab-btn-minion", classes="sidebar-tab-btn sidebar-tab-active")
+                    yield Button("💻 Shell (Terminal CLI)", id="tab-btn-shell", classes="sidebar-tab-btn")
+                    yield Button("🚨 Watchdog Hata & Sağlık", id="tab-btn-error", classes="sidebar-tab-btn")
+                    yield Button("🎯 Live Log Sniper", id="tab-btn-sniper", classes="sidebar-tab-btn")
+                    yield Button("🧩 Eklenti & Araç Mağazası", id="tab-btn-plugins", classes="sidebar-tab-btn")
+
+                yield Static("🤖 MINION ROSTER (Tıkla & Aç)", classes="section-header")
                 yield DataTable(id="minion-roster-table")
 
             # Right Workspace: Modular Dynamic Tiling Canvas with Presets and Drag Resizing
-            yield DynamicWorkspace(self.state, self.event_bus, self.plugin_manager, initial_preset="grid_2x2")
+            yield DynamicWorkspace(self.state, self.event_bus, self.plugin_manager, initial_preset=self.initial_preset)
 
         # Bottom Interactive REPL with Tab-Completion
         with Horizontal(id="repl-container"):
-            yield Input(
+            yield CliCommandInput(
                 placeholder="minion> Type command (e.g. @01 pause, @03 error, banana, detach, export, help)...",
                 id="repl-input",
                 suggester=SuggestFromList(REPL_SUGGESTIONS, case_sensitive=False),
@@ -213,16 +226,69 @@ class MinionFortressApp(App):
         except Exception:
             pass
 
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        """Handles sidebar tab buttons to open/switch CLI panes."""
+        btn_id = event.button.id or ""
+        tab_targets = {
+            "tab-btn-minion": "minion-01",
+            "tab-btn-shell": "shell",
+            "tab-btn-error": "error",
+            "tab-btn-sniper": "sniper",
+            "tab-btn-plugins": "plugins",
+        }
+        if btn_id in tab_targets:
+            self.run_worker(self._switch_and_update_tab(tab_targets[btn_id]))
+
+    async def _switch_and_update_tab(self, cli_type: str) -> None:
+        """Switches active workspace pane to selected CLI tab and updates sidebar highlight."""
+        self.current_active_tab = cli_type
+        try:
+            ws = self.query_one(DynamicWorkspace)
+            await ws.switch_active_or_first_tile(cli_type)
+        except Exception:
+            pass
+        self._update_sidebar_tab_highlight(cli_type)
+
+    def _update_sidebar_tab_highlight(self, active_cli: str) -> None:
+        """Dynamically styles the active tab button in the sidebar."""
+        tab_buttons = {
+            "shell": "tab-btn-shell",
+            "error": "tab-btn-error",
+            "sniper": "tab-btn-sniper",
+            "plugins": "tab-btn-plugins",
+        }
+        for cli, btn_id in tab_buttons.items():
+            try:
+                btn = self.query_one(f"#{btn_id}", Button)
+                if active_cli == cli:
+                    btn.add_class("sidebar-tab-active")
+                else:
+                    btn.remove_class("sidebar-tab-active")
+            except Exception:
+                pass
+
+        try:
+            minion_btn = self.query_one("#tab-btn-minion", Button)
+            if active_cli.startswith("minion-"):
+                minion_btn.add_class("sidebar-tab-active")
+            else:
+                minion_btn.remove_class("sidebar-tab-active")
+        except Exception:
+            pass
+
     def on_data_table_row_selected(self, event: DataTable.RowSelected) -> None:
-        """Selecting a minion row in the table focuses it in the Minion Pane."""
+        """Selecting a minion row in the table opens/focuses that minion in the workspace."""
         if event.row_key and event.row_key.value:
             selected_id = str(event.row_key.value)
             minion_panes = list(self.query(MinionPane))
             if minion_panes:
                 minion_panes[0].set_minion(selected_id)
+                self._update_sidebar_tab_highlight(f"minion-{selected_id}")
+            else:
+                self.run_worker(self._switch_and_update_tab(f"minion-{selected_id}"))
 
     def on_data_table_row_highlighted(self, event: DataTable.RowHighlighted) -> None:
-        """Navigating rows automatically previews that minion in Minion Pane."""
+        """Navigating rows automatically previews that minion in Minion Pane if open."""
         if event.row_key and event.row_key.value:
             selected_id = str(event.row_key.value)
             minion_panes = list(self.query(MinionPane))
