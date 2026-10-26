@@ -38,6 +38,7 @@ class CliTilePane(Vertical):
         width: 1fr;
         margin: 0;
         padding: 0;
+        overflow: hidden;
     }
     CliTilePane:focus-within {
         border: heavy #00FF7F;
@@ -84,8 +85,10 @@ class CliTilePane(Vertical):
         width: 100%;
         padding: 0;
         margin: 0;
+        overflow: hidden;
     }
     .tile-input-container {
+        dock: bottom;
         height: 3;
         min-height: 3;
         max-height: 3;
@@ -172,6 +175,9 @@ class CliTilePane(Vertical):
     }
     """
 
+    # Class-level shared command history across all tiles
+    _global_command_history: list[str] = []
+
     def __init__(
         self,
         tile_id: str,
@@ -190,9 +196,14 @@ class CliTilePane(Vertical):
         self.on_action = on_action
         self._current_widget = None
         self._current_input = None
-        self.history: list[str] = []
-        self.history_index: int = 0
+
+        # Link to shared cluster-wide command history
+        if not hasattr(self.state, "command_history") or self.state.command_history is None:
+            self.state.command_history = self._global_command_history
+        self.history = self.state.command_history
+        self.history_index: int = len(self.history)
         self._draft_input: str = ""
+        self._is_navigating_history: bool = False
 
     def compose(self) -> ComposeResult:
         # Header bar with title and quick action buttons
@@ -398,9 +409,12 @@ class CliTilePane(Vertical):
         # 2. Command History: UP arrow recalls previous commands
         if event.key == "up":
             if self.history:
-                if self.history_index == len(self.history):
+                if not self._is_navigating_history:
                     self._draft_input = inp.value
-                self.history_index = max(0, self.history_index - 1)
+                    self.history_index = len(self.history) - 1
+                    self._is_navigating_history = True
+                else:
+                    self.history_index = max(0, self.history_index - 1)
                 inp.value = self.history[self.history_index]
                 inp.cursor_position = len(inp.value)
                 inp.focus()
@@ -410,14 +424,16 @@ class CliTilePane(Vertical):
         # 3. Command History: DOWN arrow navigates forward
         if event.key == "down":
             if self.history:
-                self.history_index = min(len(self.history), self.history_index + 1)
-                if self.history_index < len(self.history):
-                    inp.value = self.history[self.history_index]
-                else:
-                    inp.value = self._draft_input
-                inp.cursor_position = len(inp.value)
-                inp.focus()
-                event.stop()
+                if self._is_navigating_history:
+                    self.history_index = min(len(self.history), self.history_index + 1)
+                    if self.history_index < len(self.history):
+                        inp.value = self.history[self.history_index]
+                    else:
+                        inp.value = self._draft_input
+                        self._is_navigating_history = False
+                    inp.cursor_position = len(inp.value)
+                    inp.focus()
+                    event.stop()
             return
 
         # 4. Route printable characters to input if tile is active but input not focused
@@ -478,11 +494,15 @@ class CliTilePane(Vertical):
         if not cmd:
             return
 
-        # Record to command history
+        # Record to shared command history
         if not self.history or self.history[-1] != cmd:
             self.history.append(cmd)
+            if self.history is not CliTilePane._global_command_history:
+                if not CliTilePane._global_command_history or CliTilePane._global_command_history[-1] != cmd:
+                    CliTilePane._global_command_history.append(cmd)
         self.history_index = len(self.history)
         self._draft_input = ""
+        self._is_navigating_history = False
 
         await self._dispatch_tile_command(cmd)
 

@@ -164,7 +164,8 @@ RichLog {{
 
 #repl-input {{
     background: #0F0F0F;
-    border: tall {BANANA_YELLOW};
+    border: none;
+    height: 1;
     color: {BANANA_YELLOW};
 }}
 
@@ -287,18 +288,21 @@ Button.paused-btn {{
     height: 1fr;
     padding: 0;
     margin: 0;
+    overflow: hidden;
 }}
 
 .split-col {{
     layout: horizontal;
     height: 1fr;
     width: 100%;
+    overflow: hidden;
 }}
 
 .split-row {{
     layout: vertical;
     height: 1fr;
     width: 100%;
+    overflow: hidden;
 }}
 
 Horizontal > .split-row {{
@@ -368,6 +372,7 @@ CliTilePane {{
     min-height: 5;
     margin: 0;
     padding: 0;
+    overflow: hidden;
 }}
 
 CliTilePane:focus-within {{
@@ -422,9 +427,11 @@ CliTilePane:focus-within {{
     width: 100%;
     padding: 0;
     margin: 0;
+    overflow: hidden;
 }}
 
 .tile-input-container {{
+    dock: bottom;
     height: 3;
     min-height: 3;
     max-height: 3;

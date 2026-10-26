@@ -109,7 +109,7 @@ class DragSplitter(Static):
                     if c not in (prev_w, next_w)
                 )
                 avail = parent_w - other_w
-                if avail > base:
+                if avail > 0:
                     return avail
             return base
         else:
@@ -124,7 +124,7 @@ class DragSplitter(Static):
                     if c not in (prev_w, next_w)
                 )
                 avail = parent_h - other_h
-                if avail > base:
+                if avail > 0:
                     return avail
             return base
 
@@ -193,6 +193,11 @@ class DragSplitter(Static):
                 self.initial_next_size = (next_w.outer_size.height or next_w.size.height or 15) if next_w else 0
 
             self.combined_size = self._get_combined_size(prev_w, next_w)
+            sum_init = self.initial_prev_size + self.initial_next_size
+            if sum_init > 0 and self.combined_size != sum_init:
+                ratio = self.combined_size / sum_init
+                self.initial_prev_size = int(self.initial_prev_size * ratio)
+                self.initial_next_size = self.combined_size - self.initial_prev_size
             self.add_class("active-drag")
             self.capture_mouse()
             event.stop()

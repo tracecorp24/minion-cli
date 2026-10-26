@@ -75,16 +75,19 @@ class DynamicWorkspace(Vertical):
         height: 1fr;
         padding: 0;
         margin: 0;
+        overflow: hidden;
     }
     .split-col {
         layout: horizontal;
         height: 1fr;
         width: 100%;
+        overflow: hidden;
     }
     .split-row {
         layout: vertical;
         height: 1fr;
         width: 100%;
+        overflow: hidden;
     }
     Horizontal > .split-row {
         width: 1fr !important;

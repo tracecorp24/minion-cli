@@ -769,3 +769,129 @@ async def test_fit_all_layout_button_and_grid_distribution():
         assert len(ws._active_tiles) == 5
 
         await app.action_quit()
+
+
+@pytest.mark.asyncio
+async def test_shared_command_history_across_panes():
+    """Verify that command history is unified and shared across all window panes (Up/Down arrow)."""
+    state = FortressState()
+    bus = EventBus()
+
+    app = MinionFortressApp(
+        state=state,
+        event_bus=bus,
+        auto_spawn_detached=False,
+        initial_preset="split_v",
+    )
+
+    async with app.run_test(size=(120, 40)) as pilot:
+        await pilot.pause(0.2)
+        ws = app.query_one(DynamicWorkspace)
+        assert len(ws._active_tiles) == 2
+        tiles = list(ws._active_tiles.values())
+        left_tile, right_tile = tiles[0], tiles[1]
+
+        # 1. Left tile submits 2 commands
+        left_inp = left_tile.query_one(f"#input-{left_tile.tile_id}", Input)
+        left_inp.value = "heal 01"
+        left_tile.post_message(Input.Submitted(left_inp, value="heal 01"))
+        await pilot.pause(0.1)
+
+        left_inp.value = "banana"
+        left_tile.post_message(Input.Submitted(left_inp, value="banana"))
+        await pilot.pause(0.1)
+
+        # 2. Focus right tile and press UP arrow -> recalls left tile's commands
+        right_inp = right_tile.query_one(f"#input-{right_tile.tile_id}", Input)
+        right_tile.focus_input()
+        await pilot.pause(0.1)
+
+        await pilot.press("up")
+        assert right_inp.value == "banana"
+
+        await pilot.press("up")
+        assert right_inp.value == "heal 01"
+
+        # 3. Right tile submits a command
+        right_inp.value = "echo from_right"
+        right_tile.post_message(Input.Submitted(right_inp, value="echo from_right"))
+        await pilot.pause(0.1)
+
+        # 4. Focus left tile and press UP arrow -> recalls right tile's command first
+        left_tile.focus_input()
+        await pilot.pause(0.1)
+
+        await pilot.press("up")
+        assert left_inp.value == "echo from_right"
+
+        await pilot.press("up")
+        assert left_inp.value == "banana"
+
+        await pilot.press("up")
+        assert left_inp.value == "heal 01"
+
+        # 5. Press DOWN arrow to navigate forward
+        await pilot.press("down")
+        assert left_inp.value == "banana"
+
+        await pilot.press("down")
+        assert left_inp.value == "echo from_right"
+
+        await pilot.press("down")
+        assert left_inp.value == ""
+
+        await app.action_quit()
+
+
+@pytest.mark.asyncio
+async def test_all_panes_retain_docked_input_field_under_splits_and_drag():
+    """Verify that all panes (including minion-02) retain their docked input fields even under tight vertical splits."""
+    state = FortressState()
+    bus = EventBus()
+
+    app = MinionFortressApp(
+        state=state,
+        event_bus=bus,
+        auto_spawn_detached=False,
+        initial_preset="single",
+    )
+
+    async with app.run_test(size=(100, 24)) as pilot:
+        await pilot.pause(0.2)
+        ws = app.query_one(DynamicWorkspace)
+        t1 = next(iter(ws._active_tiles.values()))
+
+        # 1. Split horizontally (create shell column on right)
+        await ws.split_tile(t1.tile_id, direction="horizontal")
+        await pilot.pause(0.25)
+
+        # 2. Split left tile vertically (create minion-02 at bottom left)
+        await ws.split_tile(t1.tile_id, direction="vertical")
+        await pilot.pause(0.25)
+
+        assert len(ws._active_tiles) == 3
+        # Check every tile has a visible, firmly docked input container
+        for tid, tile in ws._active_tiles.items():
+            inp = tile.query_one(f"#input-{tid}", Input)
+            container = tile.query_one(".tile-input-container")
+            assert inp is not None
+            assert container is not None
+            # The input container must be within the tile's visible vertical bounds
+            assert container.region.y >= tile.region.y
+            assert container.region.y + container.region.height <= tile.region.y + tile.region.height + 1
+            assert inp.size.width > 0
+
+        # Verify typing a command into minion-02
+        minion_02_tile = [t for t in ws._active_tiles.values() if t.cli_type == "minion-02"][0]
+        minion_02_tile.focus_input()
+        await pilot.pause(0.1)
+        inp_m2 = minion_02_tile.query_one(f"#input-{minion_02_tile.tile_id}", Input)
+        inp_m2.value = "pause"
+        minion_02_tile.post_message(Input.Submitted(inp_m2, value="pause"))
+        await pilot.pause(0.1)
+
+        # State should reflect pause on minion-02
+        assert state.minions["02"].status == MinionStatus.PAUSED
+
+        await app.action_quit()
+

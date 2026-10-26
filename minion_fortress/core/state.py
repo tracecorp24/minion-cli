@@ -141,6 +141,7 @@ class FortressState:
         self.global_logs: RingBuffer[LogEntry] = RingBuffer[LogEntry](maxlen=2000)
         self.error_logs: RingBuffer[LogEntry] = RingBuffer[LogEntry](maxlen=1000)
         self.plugins: Dict[str, Any] = {}
+        self.command_history: List[str] = []
         self._lock = threading.RLock()
 
     def get_active_minion_count(self) -> int:
