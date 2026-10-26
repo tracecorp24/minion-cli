@@ -69,6 +69,7 @@ class TileContextMenu(ModalScreen[Dict[str, Any]]):
     def compose(self) -> ComposeResult:
         with Vertical(id="menu-container"):
             yield Static(f"⚡ PENCERE İŞLEMLERİ: {self.current_cli.upper()}", classes="ctx-header")
+            yield Button("📋 Panodan Yapıştır (Paste)", id="btn-paste", classes="ctx-btn")
             yield Button("⬌ Dikey Böl (Sağa Yeni CLI Ekle)", id="btn-split-v", classes="ctx-btn")
             yield Button("⬍ Yatay Böl (Aşağı Yeni CLI Ekle)", id="btn-split-h", classes="ctx-btn")
             yield Button("🗗 Birleşik Düzenden Ayır (Ayrı Windows Penceresi)", id="btn-detach", classes="ctx-btn")
@@ -79,6 +80,7 @@ class TileContextMenu(ModalScreen[Dict[str, Any]]):
     def on_button_pressed(self, event: Button.Pressed) -> None:
         btn_id = event.button.id
         actions = {
+            "btn-paste": {"action": "paste", "tile_id": self.tile_id},
             "btn-split-v": {"action": "split_v", "tile_id": self.tile_id},
             "btn-split-h": {"action": "split_h", "tile_id": self.tile_id},
             "btn-detach": {"action": "detach", "tile_id": self.tile_id, "cli_type": self.current_cli},

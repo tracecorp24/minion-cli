@@ -111,7 +111,7 @@ class InteractiveShellPane(Vertical):
             log.write(f"[dim green]✔ Fortress Core'a iletildi: {cmd_str}[/dim green]")
             return
 
-        # 5. Harici Pencerede Başlatma (start / open)
+        # 5. Harici Pencerede Başlatma (yalnızca kullanıcı açıkça 'start' veya 'open' yazarsa)
         if first in ("start", "open"):
             target_cmd = " ".join(tokens[1:]) or "cmd.exe"
             try:
@@ -124,32 +124,8 @@ class InteractiveShellPane(Vertical):
                 log.write(f"[bold red]Harici pencere açılamadı:[/bold red] {e}")
             return
 
-        # 6. İnteraktif TUI Tespiti (Örn: agy, powershell, cmd, bash, vim)
-        # agy gibi tam TUI tabanlı uygulamalar curses/lipgloss arabirimi gerektirdiğinden
-        # -p (print) modu belirtilmemişse bağımsız Windows konsolunda başlatılır.
-        is_interactive_tui = False
-        if first == "agy":
-            # agy -p veya --print veya help text modları haricinde interaktiftir
-            if not any(flag in tokens for flag in ("-p", "--print", "--help", "-h", "version", "--version")):
-                is_interactive_tui = True
-        elif first in ("powershell", "cmd", "bash", "wsl", "vim", "nano", "htop"):
-            is_interactive_tui = True
-        elif first == "python" and len(tokens) == 1:
-            is_interactive_tui = True
-
-        if is_interactive_tui:
-            try:
-                if os.name == "nt":
-                    subprocess.Popen(f'start "{cmd_str}" cmd /k "{cmd_str}"', shell=True)
-                else:
-                    subprocess.Popen(f'x-terminal-emulator -e "{cmd_str}" || xterm -e "{cmd_str}"', shell=True)
-                log.write(f"[bold green]✔ İnteraktif CLI ({first}) bağımsız terminal penceresinde başlatıldı![/bold green]")
-                log.write(f"[dim cyan]İpucu: Komut satırı çıktılarını doğrudan bu pencerede görmek için 'agy -p \"mesaj\"' formatını kullanabilirsiniz.[/dim cyan]")
-            except Exception as e:
-                log.write(f"[bold red]İnteraktif pencere başlatılamadı:[/bold red] {e}")
-            return
-
-        # 7. Asenkron Akışlı (Streaming) Komut Çalıştırma (Asla Textual'ı kilitlemez!)
+        # 6. Doğrudan bu Bölmede (In-Pane) Canlı Akışlı Asenkron Çalıştırma
+        # agy, python, powershell, git, dir ve tüm sistem araçları bu bölmede akar!
         try:
             proc = await asyncio.create_subprocess_shell(
                 cmd_str,
@@ -171,7 +147,17 @@ class InteractiveShellPane(Vertical):
                 line = await stream.readline()
                 if not line:
                     break
-                text = line.decode("utf-8", errors="replace").rstrip()
+                # Çoklu karakter kodlaması desteği (UTF-8, Türkçe Windows CP1254/CP857, Latin1)
+                text = ""
+                for enc in ("utf-8", "cp1254", "cp857", "latin1"):
+                    try:
+                        text = line.decode(enc).rstrip("\r\n")
+                        break
+                    except Exception:
+                        continue
+                if not text:
+                    text = line.decode("utf-8", errors="replace").rstrip("\r\n")
+
                 if text:
                     prefix = "[red][ERR][/red] " if is_err else ""
                     self.app.call_later(log.write, f"{prefix}{text}")

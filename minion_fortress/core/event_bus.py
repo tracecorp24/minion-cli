@@ -35,6 +35,7 @@ class Event:
     type: EventType
     data: Dict[str, Any] = field(default_factory=dict)
     timestamp: float = field(default_factory=time.time)
+    source: str = ""
 
 
 class EventBus:
@@ -95,7 +96,9 @@ class EventBus:
 
         # 2. Loopback TCP IPC Server (Windows & network fallback)
         try:
-            self._ipc_server = await asyncio.start_server(self._handle_ipc_client, host, port)
+            self._ipc_server = await asyncio.start_server(
+                self._handle_ipc_client, host, port, reuse_address=True
+            )
         except Exception as e:
             logger.warning(f"Failed to start TCP IPC server on {host}:{port}: {e}")
             self._ipc_server = None

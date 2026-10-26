@@ -26,6 +26,35 @@ from minion_fortress.ui.panes.shell_pane import InteractiveShellPane
 from minion_fortress.ui.context_menu import TileContextMenu, CliSelectorModal
 
 
+def get_clipboard_text() -> str:
+    """Safely retrieves text from system clipboard using tkinter or powershell fallback."""
+    try:
+        import tkinter as tk
+        r = tk.Tk()
+        r.withdraw()
+        val = r.clipboard_get()
+        r.destroy()
+        if val:
+            return str(val)
+    except Exception:
+        pass
+
+    try:
+        import subprocess
+        res = subprocess.run(
+            ["powershell", "-NoProfile", "-Command", "Get-Clipboard"],
+            capture_output=True,
+            text=True,
+            timeout=1,
+        )
+        if res.stdout:
+            return res.stdout.strip("\r\n")
+    except Exception:
+        pass
+
+    return ""
+
+
 class CliTilePane(Vertical):
     """An independent CLI pane tile that can be split, detached, resized, or switched."""
 
@@ -185,6 +214,9 @@ class CliTilePane(Vertical):
         self.plugin_manager = plugin_manager
         self.on_action = on_action
         self._current_widget = None
+        self.history: list[str] = []
+        self.history_index: int = 0
+        self._draft_input: str = ""
 
     def compose(self) -> ComposeResult:
         # Header bar with title and quick action buttons
@@ -289,13 +321,44 @@ class CliTilePane(Vertical):
         except Exception:
             pass
 
+    def paste_clipboard(self) -> None:
+        """Pastes text from system clipboard directly into this tile's command input."""
+        try:
+            text = get_clipboard_text().strip("\r\n")
+            if not text:
+                return
+            inp = self.query_one(f"#input-{self.tile_id}", Input)
+            if hasattr(inp, "insert_text_at_cursor"):
+                inp.insert_text_at_cursor(text)
+            else:
+                inp.value += text
+                inp.cursor_position = len(inp.value)
+            inp.focus()
+            self.app.notify(f"📋 Panodan yapıştırıldı: {text[:28]}...", title="YAPIŞTIRILDI", timeout=1.5)
+        except Exception as e:
+            self.app.notify(f"Panodan yapıştırılamadı: {e}", severity="error")
+
     def on_mount(self) -> None:
         self.call_after_refresh(self.focus_input)
 
     def on_click(self, event: events.Click) -> None:
-        """Right-click opens the context menu modal; left-click focuses command input."""
+        """Right-click on input pastes clipboard; elsewhere opens context menu. Left-click focuses input."""
         if event.button == 3:  # Right-click
             event.stop()
+            try:
+                clicked = self.screen.get_widget_at(event.screen_x, event.screen_y)[0]
+                # If right-click was on input, prompt, or input bar -> direct paste!
+                if (
+                    isinstance(clicked, Input)
+                    or clicked.id == f"input-{self.tile_id}"
+                    or "tile-input-container" in getattr(clicked, "classes", set())
+                    or "tile-prompt-tag" in getattr(clicked, "classes", set())
+                    or "tile-cli-input" in getattr(clicked, "classes", set())
+                ):
+                    self.paste_clipboard()
+                    return
+            except Exception:
+                pass
             self._open_context_menu()
         elif event.button == 1:
             try:
@@ -306,20 +369,55 @@ class CliTilePane(Vertical):
                 self.focus_input()
 
     def on_key(self, event: events.Key) -> None:
-        """Ensure printable keystrokes inside tile focus and reach the command input."""
+        """Handles clipboard paste, history Up/Down navigation, and key forwarding."""
         try:
             inp = self.query_one(f"#input-{self.tile_id}", Input)
-            if self.app.focused != inp and event.is_printable:
-                inp.focus()
         except Exception:
-            pass
+            return
+
+        # 1. Clipboard paste shortcuts (Ctrl+V, Shift+Insert)
+        if event.key in ("ctrl+v", "ctrl+shift+v", "shift+insert"):
+            self.paste_clipboard()
+            event.stop()
+            return
+
+        # 2. Command History: UP arrow recalls previous commands
+        if event.key == "up":
+            if self.history:
+                if self.history_index == len(self.history):
+                    self._draft_input = inp.value
+                self.history_index = max(0, self.history_index - 1)
+                inp.value = self.history[self.history_index]
+                inp.cursor_position = len(inp.value)
+                inp.focus()
+                event.stop()
+            return
+
+        # 3. Command History: DOWN arrow navigates forward
+        if event.key == "down":
+            if self.history:
+                self.history_index = min(len(self.history), self.history_index + 1)
+                if self.history_index < len(self.history):
+                    inp.value = self.history[self.history_index]
+                else:
+                    inp.value = self._draft_input
+                inp.cursor_position = len(inp.value)
+                inp.focus()
+                event.stop()
+            return
+
+        # 4. Route printable characters to input if tile is active but input not focused
+        if self.app.focused != inp and event.is_printable:
+            inp.focus()
 
     def _open_context_menu(self) -> None:
         def _handle_menu_result(result: dict) -> None:
             if not result or result.get("action") == "cancel":
                 return
             action = result.get("action")
-            if action == "open_cli_selector":
+            if action == "paste":
+                self.paste_clipboard()
+            elif action == "open_cli_selector":
                 self._open_cli_selector()
             elif self.on_action:
                 self.on_action(action, self.tile_id, result)
@@ -360,6 +458,12 @@ class CliTilePane(Vertical):
         if not cmd:
             return
 
+        # Record to command history
+        if not self.history or self.history[-1] != cmd:
+            self.history.append(cmd)
+        self.history_index = len(self.history)
+        self._draft_input = ""
+
         await self._dispatch_tile_command(cmd)
 
     async def _dispatch_tile_command(self, cmd: str) -> None:
@@ -390,23 +494,20 @@ class CliTilePane(Vertical):
                 )
                 return
 
-            # Otherwise, the operator typed a system command or tool (e.g. agy, python, dir, git)
-            # If it's agy or an interactive shell app, launch safely in external console or switch to shell:
-            if first == "agy" or first in ("start", "open", "powershell", "cmd", "bash"):
-                target_cmd = " ".join(parts[1:]) if first in ("start", "open") else cmd
-                if not target_cmd:
-                    target_cmd = "cmd.exe"
+            # Explicit external window request: start <cmd> or open <cmd>
+            if first in ("start", "open"):
+                target_cmd = " ".join(parts[1:]) or "cmd.exe"
                 try:
                     if os.name == "nt":
                         subprocess.Popen(f'start "{target_cmd}" cmd /k "{target_cmd}"', shell=True)
                     else:
                         subprocess.Popen(f'x-terminal-emulator -e "{target_cmd}" || xterm -e "{target_cmd}"', shell=True)
-                    self.app.notify(f"🚀 Harici terminalde başlatıldı: {target_cmd}", title="CLI BAŞLATILDI")
+                    self.app.notify(f"🚀 Harici terminalde başlatıldı: {target_cmd}", title="HARİCİ PENCERE")
                 except Exception as e:
                     self.app.notify(f"Terminal başlatılamadı: {e}", severity="error")
                 return
 
-            # For general shell commands entered in a minion pane, auto-switch to shell and execute!
+            # All other system commands (agy, python, git, dir, etc.): auto-switch to shell and execute right in this pane!
             await self.switch_cli("shell")
             if isinstance(self._current_widget, InteractiveShellPane):
                 await self._current_widget.execute_command(cmd)

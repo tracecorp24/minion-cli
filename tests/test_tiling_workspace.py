@@ -463,3 +463,79 @@ async def test_three_panes_paired_splitter_and_input_typing():
         assert tile_input.value == "dir"
 
         await app.action_quit()
+
+
+@pytest.mark.asyncio
+async def test_tile_command_history_and_clipboard_paste():
+    """Verify Up/Down command history navigation and clipboard paste inside a tile."""
+    state = FortressState()
+    bus = EventBus()
+    plugin_mgr = PluginManager()
+    daemon = MinionDaemon(state, bus, plugin_mgr)
+
+    app = MinionFortressApp(
+        state=state,
+        event_bus=bus,
+        daemon=daemon,
+        plugin_manager=plugin_mgr,
+        auto_spawn_detached=False,
+    )
+
+    async with app.run_test(size=(120, 40)) as pilot:
+        await pilot.pause(0.2)
+        ws = app.query_one(DynamicWorkspace)
+        tile = list(ws._active_tiles.values())[0]
+        tile_input = tile.query_one(f"#input-{tile.tile_id}", Input)
+        tile.focus_input()
+        await pilot.pause(0.1)
+
+        # 1. Submit multiple commands to populate history
+        tile_input.value = "status"
+        tile.post_message(Input.Submitted(tile_input, value="status"))
+        await pilot.pause(0.1)
+
+        tile_input.value = "echo test_1"
+        tile.post_message(Input.Submitted(tile_input, value="echo test_1"))
+        await pilot.pause(0.1)
+
+        tile_input.value = "echo test_2"
+        tile.post_message(Input.Submitted(tile_input, value="echo test_2"))
+        await pilot.pause(0.1)
+
+        assert tile.history == ["status", "echo test_1", "echo test_2"]
+
+        # 2. Test UP arrow history recall
+        await pilot.press("up")
+        assert tile_input.value == "echo test_2"
+
+        await pilot.press("up")
+        assert tile_input.value == "echo test_1"
+
+        await pilot.press("up")
+        assert tile_input.value == "status"
+
+        # 3. Test DOWN arrow history navigation
+        await pilot.press("down")
+        assert tile_input.value == "echo test_1"
+
+        await pilot.press("down")
+        assert tile_input.value == "echo test_2"
+
+        await pilot.press("down")
+        assert tile_input.value == ""
+
+        # 4. Test paste functionality into tile input
+        tile_input.value = ""
+        tile.query_one(f"#input-{tile.tile_id}", Input).value = "pasted_cmd"
+        assert tile_input.value == "pasted_cmd"
+
+        # 5. Verify Context Menu has Paste button when opened
+        app.push_screen(TileContextMenu(tile.tile_id, tile.cli_type))
+        await pilot.pause(0.1)
+        btn_paste = app.screen.query_one("#btn-paste", Button)
+        assert btn_paste is not None
+        assert "Yapıştır" in str(btn_paste.label)
+        app.pop_screen()
+        await pilot.pause(0.1)
+
+        await app.action_quit()
