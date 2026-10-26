@@ -147,6 +147,11 @@ Footer {{
     color: #C0C0C0;
     padding: 0 1;
     scrollbar-color: {BANANA_YELLOW} #222222;
+    overflow-x: hidden;
+}}
+
+RichLog {{
+    overflow-x: hidden;
 }}
 
 #repl-container {{
@@ -191,6 +196,39 @@ Footer {{
     padding: 0 1;
     background: #181818;
     align: center middle;
+}}
+
+.shell-action-bar {{
+    layout: horizontal;
+    height: 1;
+    min-height: 1;
+    background: #181818;
+    padding: 0 1;
+    margin: 0;
+}}
+
+.shell-status-label {{
+    width: 1fr;
+    height: 1;
+    color: #FFE135;
+    text-style: bold;
+}}
+
+.shell-hdr-btn {{
+    width: auto;
+    min-width: 18;
+    height: 1;
+    margin: 0;
+    padding: 0 1;
+    background: #252525;
+    color: #00FF7F;
+    border: none;
+}}
+
+.shell-hdr-btn:hover {{
+    background: #00FF7F;
+    color: #000000;
+    text-style: bold;
 }}
 
 Button {{

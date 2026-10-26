@@ -33,7 +33,7 @@ class LogSniperPane(Vertical):
             id="sniper-regex-input",
         )
         yield Static("Matches: 0 │ Filter: (none - showing all logs)", id="sniper-status-bar")
-        yield RichLog(id="sniper-log-stream", classes="log-stream", highlight=True, markup=True)
+        yield RichLog(id="sniper-log-stream", classes="log-stream", highlight=True, markup=True, wrap=True, min_width=0)
 
     def on_mount(self) -> None:
         self.event_bus.subscribe(EventType.LOG, self._handle_new_log)

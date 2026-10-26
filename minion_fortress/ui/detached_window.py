@@ -68,6 +68,7 @@ Screen {
 .stream-log {
     height: 1fr;
     background: #101010;
+    overflow-x: hidden;
 }
 
 #cmd-bar {
@@ -111,12 +112,12 @@ class DetachedMonitorApp(App):
             # Left Half: Dedicated Live Error & Auto-Healing pane
             with Vertical(classes="pane-box"):
                 yield Static("🚨 DEDICATED ERROR & HEALTH PANE", classes="pane-title error-title")
-                yield RichLog(id="error-stream", classes="stream-log", highlight=True, markup=True)
+                yield RichLog(id="error-stream", classes="stream-log", highlight=True, markup=True, wrap=True, min_width=0)
 
             # Right Half: Live Activity & Telemetry Stream
             with Vertical(classes="pane-box"):
                 yield Static(f"📡 LIVE EVENT STREAM {banner_tag}", classes="pane-title")
-                yield RichLog(id="activity-stream", classes="stream-log", highlight=True, markup=True)
+                yield RichLog(id="activity-stream", classes="stream-log", highlight=True, markup=True, wrap=True, min_width=0)
 
         ph = f"Send command to {self.target_cli} (e.g. pause, resume, banana, heal)..." if self.target_cli != "all" else "Send command to Main Fortress (e.g. banana, heal 01, @01 pause)..."
         with Horizontal(id="cmd-bar"):

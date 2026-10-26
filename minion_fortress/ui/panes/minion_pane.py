@@ -45,7 +45,7 @@ class MinionPane(Vertical):
             yield Button("Replay 50", id="btn-replay-50")
             yield Button("🔴 Live Stream", id="btn-live", classes="active-btn")
 
-        yield RichLog(id="minion-log-stream", classes="log-stream", highlight=True, markup=True)
+        yield RichLog(id="minion-log-stream", classes="log-stream", highlight=True, markup=True, wrap=True, min_width=0)
 
     def on_mount(self) -> None:
         self.event_bus.subscribe(EventType.LOG, self._on_log)

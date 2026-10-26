@@ -27,7 +27,7 @@ class ErrorHealthPane(Vertical):
     def compose(self) -> ComposeResult:
         yield Static("🚨 ERROR & HEALTH MONITOR │ [SHIELD: ACTIVE]", classes="pane-title error-title", id="error-title")
         yield Static("Errors: 0 │ Warnings: 0 │ Auto-Heals: 0", id="error-telemetry-badge")
-        yield RichLog(id="error-log-stream", classes="log-stream", highlight=True, markup=True)
+        yield RichLog(id="error-log-stream", classes="log-stream", highlight=True, markup=True, wrap=True, min_width=0)
 
     def on_mount(self) -> None:
         self.event_bus.subscribe(EventType.ERROR, self._handle_error_event)

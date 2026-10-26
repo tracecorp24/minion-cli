@@ -136,12 +136,14 @@ class CliTilePane(Vertical):
         max-height: 2 !important;
         background: #141414 !important;
         color: #FFE135 !important;
+        overflow-x: hidden !important;
     }
     CliTilePane .action-bar {
         height: 1 !important;
         padding: 0 1 !important;
         margin: 0 !important;
         background: #181818 !important;
+        overflow-x: hidden !important;
     }
     CliTilePane .action-bar Button {
         height: 1 !important;
@@ -153,6 +155,7 @@ class CliTilePane(Vertical):
     CliTilePane .log-stream {
         height: 1fr !important;
         min-height: 2 !important;
+        overflow-x: hidden !important;
     }
     CliTilePane #sniper-regex-input {
         height: 1 !important;

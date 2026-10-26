@@ -74,7 +74,7 @@ async def test_dynamic_workspace_presets():
         # Test Switching back to 'grid_2x2'
         btn_grid = ws.query_one("#preset-grid-2x2", Button)
         btn_grid.press()
-        await pilot.pause(0.1)
+        await pilot.pause(0.25)
         assert ws.current_preset == "grid_2x2"
         assert len(ws._active_tiles) == 4
 
@@ -608,4 +608,41 @@ async def test_agy_agent_embedded_session():
         await pilot.pause(0.1)
 
         await app.action_quit()
+
+
+@pytest.mark.asyncio
+async def test_richlog_wrapping_and_no_horizontal_scroll():
+    """Verify that text wraps dynamically to pane width without horizontal scroll."""
+    state = FortressState()
+    bus = EventBus()
+
+    app = MinionFortressApp(
+        state=state,
+        event_bus=bus,
+        auto_spawn_detached=False,
+    )
+
+    async with app.run_test(size=(60, 25)) as pilot:
+        await pilot.pause(0.2)
+        ws = app.query_one(DynamicWorkspace)
+        tile = ws._active_tiles["tile_1"]
+
+        # Switch to shell and verify RichLog configuration
+        await tile.switch_cli("shell")
+        await pilot.pause(0.1)
+
+        from textual.widgets import RichLog
+        log = tile.query_one("#shell-stream", RichLog)
+        assert log.wrap is True
+        assert log.min_width == 0
+
+        # Write a line much longer than the pane's width
+        log.write("A" * 150)
+        await pilot.pause(0.1)
+
+        # Confirm zero horizontal scrolling is needed
+        assert log.max_scroll_x == 0
+
+        await app.action_quit()
+
 
