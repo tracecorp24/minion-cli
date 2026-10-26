@@ -5,7 +5,7 @@ Per-tile CLI execution, Right-Click Context Menu, DragSplitter, and Layout Prese
 
 import pytest
 from textual import events
-from textual.widgets import Button, Input
+from textual.widgets import Button, Input, Static
 
 from minion_fortress.core.state import FortressState, MinionStatus
 from minion_fortress.core.event_bus import EventBus
@@ -552,3 +552,60 @@ async def test_tile_command_history_and_clipboard_paste():
         await pilot.pause(0.1)
 
         await app.action_quit()
+
+
+@pytest.mark.asyncio
+async def test_agy_agent_embedded_session():
+    """Verify seamless agy agent activation, prompt updates, and exit in shell pane."""
+    state = FortressState()
+    bus = EventBus()
+
+    app = MinionFortressApp(
+        state=state,
+        event_bus=bus,
+        auto_spawn_detached=False,
+    )
+
+    async with app.run_test() as pilot:
+        await pilot.pause(0.2)
+        ws = app.query_one(DynamicWorkspace)
+        tile = ws._active_tiles["tile_1"]
+
+        # 1. Switch to shell mode
+        await tile.switch_cli("shell")
+        await pilot.pause(0.1)
+        prompt_lbl = tile.query_one(f"#prompt-lbl-{tile.tile_id}", Static)
+        assert prompt_lbl.render().plain == "[shell]>"
+
+        shell_pane = tile.query_one(InteractiveShellPane)
+        assert shell_pane.agy_mode is False
+
+        # 2. Enter agy mode via command
+        await shell_pane.execute_command("agy --dangerously-skip-permissions")
+        await pilot.pause(0.1)
+        assert shell_pane.agy_mode is True
+        assert prompt_lbl.render().plain == "[agy]>"
+
+        # 3. Exit agy mode back to standard shell
+        await shell_pane.execute_command("exit")
+        await pilot.pause(0.1)
+        assert shell_pane.agy_mode is False
+        assert prompt_lbl.render().plain == "[shell]>"
+
+        # 4. Switch directly to 'agy' CLI type
+        await tile.switch_cli("agy")
+        await pilot.pause(0.1)
+        shell_pane_agy = tile.query_one(InteractiveShellPane)
+        assert shell_pane_agy.agy_mode is True
+        assert prompt_lbl.render().plain == "[agy]>"
+
+        # 5. Check context menu has external terminal button
+        app.push_screen(TileContextMenu(tile.tile_id, tile.cli_type))
+        await pilot.pause(0.1)
+        btn_ext = app.screen.query_one("#btn-open-ext-term", Button)
+        assert btn_ext is not None
+        app.pop_screen()
+        await pilot.pause(0.1)
+
+        await app.action_quit()
+

@@ -207,7 +207,7 @@ class CliTilePane(Vertical):
 
         # Dedicated per-tile command prompt
         with Horizontal(classes="tile-input-container"):
-            yield Static(f"[{self.cli_type}]>", id=f"prompt-lbl-{self.tile_id}", classes="tile-prompt-tag")
+            yield Static(f"[{self.cli_type}]>", id=f"prompt-lbl-{self.tile_id}", classes="tile-prompt-tag", markup=False)
             yield CliCommandInput(
                 placeholder=self._get_input_placeholder(),
                 id=f"input-{self.tile_id}",
@@ -216,6 +216,7 @@ class CliTilePane(Vertical):
 
     def _format_title(self) -> str:
         tag_map = {
+            "agy": "🤖 ANTIGRAVITY AGENT CLI",
             "shell": "💻 INTERACTIVE SHELL CLI",
             "error": "🚨 WATCHDOG ERROR & HEALTH",
             "sniper": "🎯 LIVE LOG SNIPER",
@@ -232,6 +233,8 @@ class CliTilePane(Vertical):
     def _get_input_placeholder(self) -> str:
         if self.cli_type.startswith("minion-"):
             return "Komut: pause, resume, error, replay, model <name>, banana..."
+        elif self.cli_type == "agy":
+            return "Antigravity'ye prompt yazın (Durdurmak için 'stop')..."
         elif self.cli_type == "shell":
             return "Shell Komutu: dir, git, python, banana, heal, help..."
         elif self.cli_type == "error":
@@ -246,8 +249,20 @@ class CliTilePane(Vertical):
         if self.cli_type.startswith("minion-"):
             mid = self.cli_type.replace("minion-", "")
             w = MinionPane(self.state, self.event_bus, initial_minion_id=mid)
+        elif self.cli_type == "agy":
+            w = InteractiveShellPane(
+                self.state,
+                self.event_bus,
+                initial_agy_mode=True,
+                on_mode_change=self._on_shell_mode_change,
+            )
         elif self.cli_type == "shell":
-            w = InteractiveShellPane(self.state, self.event_bus)
+            w = InteractiveShellPane(
+                self.state,
+                self.event_bus,
+                initial_agy_mode=False,
+                on_mode_change=self._on_shell_mode_change,
+            )
         elif self.cli_type == "error":
             w = ErrorHealthPane(self.state, self.event_bus)
         elif self.cli_type == "sniper":
@@ -255,10 +270,30 @@ class CliTilePane(Vertical):
         elif self.cli_type == "plugins":
             w = PluginPane(self.state, self.event_bus, self.plugin_manager)
         else:
-            w = InteractiveShellPane(self.state, self.event_bus)
+            w = InteractiveShellPane(
+                self.state,
+                self.event_bus,
+                initial_agy_mode=False,
+                on_mode_change=self._on_shell_mode_change,
+            )
 
         self._current_widget = w
         return w
+
+    def _on_shell_mode_change(self, mode: str, placeholder: str) -> None:
+        """Dynamically updates the prompt indicator, placeholder, and title when shell mode shifts."""
+        try:
+            prompt_lbl = self.query_one(f"#prompt-lbl-{self.tile_id}", Static)
+            prompt_lbl.update(f"[{mode}]>")
+            inp = self.query_one(f"#input-{self.tile_id}", Input)
+            inp.placeholder = placeholder
+            title_widget = self.query_one(f"#title-{self.tile_id}", Static)
+            if mode == "agy":
+                title_widget.update("🤖 ANTIGRAVITY AGENT CLI │ Sağ Tık: Menü")
+            elif mode == "shell":
+                title_widget.update("💻 INTERACTIVE SHELL CLI │ Sağ Tık: Menü")
+        except Exception:
+            pass
 
     async def switch_cli(self, new_cli_type: str) -> None:
         """Dynamically switches this tile's running CLI type."""
@@ -388,6 +423,12 @@ class CliTilePane(Vertical):
                 self.paste_clipboard()
             elif action == "open_cli_selector":
                 self._open_cli_selector()
+            elif action == "open_ext_term":
+                if isinstance(self._current_widget, InteractiveShellPane):
+                    asyncio.create_task(self._current_widget.execute_command("open agy"))
+                else:
+                    if os.name == "nt":
+                        subprocess.Popen('start "Terminal" cmd.exe', shell=True)
             elif self.on_action:
                 self.on_action(action, self.tile_id, result)
 
@@ -439,8 +480,8 @@ class CliTilePane(Vertical):
         parts = cmd.split()
         first = parts[0].lower()
 
-        # If it's a shell pane, execute directly via InteractiveShellPane
-        if self.cli_type == "shell":
+        # If it's a shell or agy pane, execute directly via InteractiveShellPane
+        if self.cli_type in ("shell", "agy"):
             if isinstance(self._current_widget, InteractiveShellPane):
                 await self._current_widget.execute_command(cmd)
             return

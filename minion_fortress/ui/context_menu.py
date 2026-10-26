@@ -70,6 +70,8 @@ class TileContextMenu(ModalScreen[Dict[str, Any]]):
         with Vertical(id="menu-container"):
             yield Static(f"⚡ PENCERE İŞLEMLERİ: {self.current_cli.upper()}", classes="ctx-header")
             yield Button("📋 Panodan Yapıştır (Paste)", id="btn-paste", classes="ctx-btn")
+            if self.current_cli in ("shell", "agy"):
+                yield Button("💻 Harici Windows Terminalinde Aç (open agy / cmd)", id="btn-open-ext-term", classes="ctx-btn")
             yield Button("⬌ Dikey Böl (Sağa Yeni CLI Ekle)", id="btn-split-v", classes="ctx-btn")
             yield Button("⬍ Yatay Böl (Aşağı Yeni CLI Ekle)", id="btn-split-h", classes="ctx-btn")
             yield Button("🗗 Birleşik Düzenden Ayır (Ayrı Windows Penceresi)", id="btn-detach", classes="ctx-btn")
@@ -81,6 +83,7 @@ class TileContextMenu(ModalScreen[Dict[str, Any]]):
         btn_id = event.button.id
         actions = {
             "btn-paste": {"action": "paste", "tile_id": self.tile_id},
+            "btn-open-ext-term": {"action": "open_ext_term", "tile_id": self.tile_id},
             "btn-split-v": {"action": "split_v", "tile_id": self.tile_id},
             "btn-split-h": {"action": "split_h", "tile_id": self.tile_id},
             "btn-detach": {"action": "detach", "tile_id": self.tile_id, "cli_type": self.current_cli},
@@ -137,12 +140,13 @@ class CliSelectorModal(ModalScreen[Optional[str]]):
     ]
 
     CLI_CHOICES = [
+        ("agy", "🤖 Antigravity AI Agent (agy • Canlı Kod & Sohbet)"),
+        ("shell", "💻 İnteraktif Shell CLI (Sistem & Python Konsolu)"),
         ("minion-01", "🤖 Minion-01 (ast-parser • qwen-2.5-coder)"),
         ("minion-02", "🤖 Minion-02 (net-mon • glm-4-flash)"),
         ("minion-03", "🤖 Minion-03 (quant • deepseek-r1)"),
         ("minion-04", "🤖 Minion-04 (doc-ext • qwen-2.5-coder)"),
         ("minion-05", "🤖 Minion-05 (code-synth • qwen-2.5-coder)"),
-        ("shell", "💻 İnteraktif Shell CLI (Sistem & Python Konsolu)"),
         ("error", "🚨 Watchdog Hata & Otomatik İyileştirme Monitörü"),
         ("sniper", "🎯 Log Sniper (Canlı Regex Filtreleme)"),
         ("plugins", "🧩 Eklenti & Araç Mağazası (Plugin Hub)"),
